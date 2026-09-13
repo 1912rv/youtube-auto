@@ -2,12 +2,6 @@ name: Generate YouTube Short
 
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: "Upload this manual run to YouTube"
-        required: true
-        default: false
-        type: boolean
   schedule:
     # 00:00, 04:00, 06:00, 12:00, 19:00 IST (UTC+5:30)
     - cron: "30 18 * * *"
@@ -42,17 +36,4 @@ jobs:
           ALLOW_DAILY_FALLBACK: "false"
           PUZZLE_FETCH_ATTEMPTS: "3"
           MIN_PUZZLE_RATING: "2000"
-        run: |
-          if [ "${{ github.event_name == 'schedule' || inputs.publish == true }}" = "true" ]; then
-            python script.py
-          else
-            python script.py --preview
-          fi
-
-      - name: Save preview video
-        if: github.event_name == 'workflow_dispatch' && inputs.publish == false
-        uses: actions/upload-artifact@v4
-        with:
-          name: youtube-short-preview
-          path: /tmp/youtube-auto/temp_output_short.mp4
-          retention-days: 7
+        run: python script.py

@@ -78,9 +78,7 @@ The token must have the `https://www.googleapis.com/auth/youtube.upload` scope a
 
 ## Actions Behavior
 
-Manual workflow runs default to preview mode. The generated MP4 is saved as a downloadable Actions artifact named `youtube-short-preview`.
-
-To publish a manual run, start the workflow from the **Actions** tab and set the `publish` input to `true`.
+Manual workflow runs upload directly. There is no preview step in GitHub Actions. Use `python script.py --preview` locally when you want to inspect a video without uploading.
 
 Scheduled runs publish automatically at these India Standard Time slots:
 
@@ -110,4 +108,4 @@ The following environment variables are supported:
 - **HTTP 429 from Lichess:** wait before retrying. Do not repeatedly start the workflow; scheduled runs will try again at the next slot.
 - **Missing FFmpeg:** install FFmpeg and ensure `ffmpeg` runs from PowerShell or the Actions runner.
 - **YouTube authentication error:** recreate `YOUTUBE_TOKEN_JSON` using an account with YouTube upload permission.
-- **No upload on a manual run:** set the workflow `publish` input to `true`; the default is preview-only.
+- **No upload on a manual run:** check that the `YOUTUBE_TOKEN_JSON` repository secret exists and contains a valid refresh token.
