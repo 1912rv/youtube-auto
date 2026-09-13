@@ -1,20 +1,113 @@
-# YouTube auto uploader
+# YouTube Chess Puzzle Shorts
 
-This script fetches one Lichess puzzle, creates a vertical MP4, and optionally uploads it to YouTube. It does not download web pages or store generated media in the repository; temporary files are written to the system temporary directory.
+This project fetches a Lichess chess puzzle, renders a vertical 9:16 Short, generates voiceover and sound effects, and optionally uploads the video to YouTube through the YouTube Data API v3.
 
-## Local run
+The video includes:
 
-Install FFmpeg and the Python packages:
+- A hard puzzle target of `2000+` rating.
+- A 10-second challenge countdown.
+- The original puzzle perspective kept on the solution frame.
+- A highlighted best-move arrow.
+- Voiceover, move sound, and a quiet generated background sound bed.
+- A call to action asking viewers to comment their next move.
+
+Generated audio, tokens, and video files are stored outside the repository by default. No web pages are downloaded locally.
+
+## Requirements
+
+- Python 3.11 or newer
+- FFmpeg available on the system `PATH`
+- Internet access to Lichess, Edge-TTS, and YouTube API services
+- A Google Cloud OAuth client configured for the YouTube Data API v3
+
+Install Python dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
+```
+
+## Preview Locally
+
+Preview mode never authenticates with YouTube and never uploads:
+
+```powershell
 python script.py --preview
 ```
 
-This creates a preview MP4 without authenticating or uploading. Review `temp_output_short.mp4` in the system temporary directory before publishing.
+The preview is written to:
 
-To upload locally, set `YOUTUBE_TOKEN_JSON` to the JSON for an authorized YouTube OAuth token. For a first browser-based login, set `YOUTUBE_CLIENT_SECRET_JSON` to the OAuth client JSON as an environment variable; do not add a client-secret file to this repository.
+```text
+%TEMP%\youtube-auto\temp_output_short.mp4
+```
 
-## GitHub Actions
+To use a different output directory:
 
-Add a repository secret named `YOUTUBE_TOKEN_JSON`. A manual workflow run previews the video and stores it as a downloadable Actions artifact. Set the manual `publish` input to `true` only after reviewing it. Scheduled runs require a fresh Lichess `/next` puzzle rated `2000+`; they do not reuse the daily fallback. Five Shorts upload daily at 00:00 (midnight), 04:00, 06:00, 12:00 (noon), and 19:00 IST. These correspond to 18:30, 22:30, 00:30, 06:30, and 13:30 UTC.
+```powershell
+$env:OUTPUT_DIR = "C:\path\to\output"
+python script.py --preview
+```
+
+## Local YouTube Upload
+
+For unattended local uploads, set `YOUTUBE_TOKEN_JSON` to the complete authorized OAuth token JSON. The Google account used to authorize the token determines the YouTube channel.
+
+```powershell
+$env:YOUTUBE_TOKEN_JSON = Get-Content "C:\path\youtube-token.json" -Raw
+python script.py
+```
+
+For the first interactive authorization only, use the OAuth client JSON as an environment variable. Do not commit a client-secret file:
+
+```powershell
+$env:YOUTUBE_CLIENT_SECRET_JSON = Get-Content "C:\path\client_secret.json" -Raw
+python script.py
+```
+
+Complete the browser login with the Google account for the intended YouTube channel. The local refresh token is stored in the temporary output directory.
+
+## GitHub Actions Setup
+
+The workflow is located at `.github/workflows/youtube.yml`.
+
+1. Open the repository on GitHub.
+2. Go to **Settings**, **Secrets and variables**, then **Actions**.
+3. Create a repository secret named `YOUTUBE_TOKEN_JSON`.
+4. Set its value to a complete authorized YouTube OAuth token JSON.
+
+The token must have the `https://www.googleapis.com/auth/youtube.upload` scope and must belong to the YouTube channel where the Shorts should be published. Never put the client secret or token directly in the workflow or source code.
+
+## Actions Behavior
+
+Manual workflow runs default to preview mode. The generated MP4 is saved as a downloadable Actions artifact named `youtube-short-preview`.
+
+To publish a manual run, start the workflow from the **Actions** tab and set the `publish` input to `true`.
+
+Scheduled runs publish automatically at these India Standard Time slots:
+
+| IST | UTC cron time |
+| --- | --- |
+| 12:00 AM | 6:30 PM previous day |
+| 4:00 AM | 10:30 PM previous day |
+| 6:00 AM | 12:30 AM |
+| 12:00 PM | 6:30 AM |
+| 7:00 PM | 1:30 PM |
+
+GitHub Actions cron uses UTC and can start a few minutes late. Scheduled runs require a fresh Lichess `/next` puzzle rated `2000+`. The daily fallback is disabled in Actions, so a run fails instead of uploading a repeated daily puzzle when Lichess is rate-limited or does not return a new hard puzzle.
+
+## Configuration
+
+The following environment variables are supported:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OUTPUT_DIR` | System temporary directory | Generated media and local token location |
+| `MIN_PUZZLE_RATING` | `2000` | Minimum target rating for selected puzzles |
+| `PUZZLE_FETCH_ATTEMPTS` | `3` | Number of `/next` requests per run |
+| `ALLOW_DAILY_FALLBACK` | `true` | Allow the daily puzzle when `/next` is unavailable; Actions sets this to `false` |
+
+## Troubleshooting
+
+- **HTTP 429 from Lichess:** wait before retrying. Do not repeatedly start the workflow; scheduled runs will try again at the next slot.
+- **Missing FFmpeg:** install FFmpeg and ensure `ffmpeg` runs from PowerShell or the Actions runner.
+- **YouTube authentication error:** recreate `YOUTUBE_TOKEN_JSON` using an account with YouTube upload permission.
+- **No upload on a manual run:** set the workflow `publish` input to `true`; the default is preview-only.
