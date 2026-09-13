@@ -1,0 +1,20 @@
+# Python virtual envs
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local generated media
+*.mp4
+*.mp3
+*.wav
+*.png
+*.pickle
+
+# Secret files
+client_secret*.json
+token.pickle
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
