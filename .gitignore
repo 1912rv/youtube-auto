@@ -10,6 +10,7 @@ __pycache__/
 *.wav
 *.png
 *.pickle
+previews/
 
 # Secret files
 client_secret*.json
