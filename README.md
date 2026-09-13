@@ -17,4 +17,4 @@ To upload locally, set `YOUTUBE_TOKEN_JSON` to the JSON for an authorized YouTub
 
 ## GitHub Actions
 
-Add a repository secret named `YOUTUBE_TOKEN_JSON`. A manual workflow run previews the video and stores it as a downloadable Actions artifact. Set the manual `publish` input to `true` only after reviewing it. Scheduled runs require a fresh Lichess `/next` puzzle rated `2000+`; they do not reuse the daily fallback. Five Shorts upload daily at 09:00, 13:00, 17:00, 20:00, and 22:00 IST (03:30, 07:30, 11:30, 14:30, and 16:30 UTC).
+Add a repository secret named `YOUTUBE_TOKEN_JSON`. A manual workflow run previews the video and stores it as a downloadable Actions artifact. Set the manual `publish` input to `true` only after reviewing it. Scheduled runs require a fresh Lichess `/next` puzzle rated `2000+`; they do not reuse the daily fallback. Five Shorts upload daily at 00:00 (midnight), 04:00, 06:00, 12:00 (noon), and 19:00 IST. These correspond to 18:30, 22:30, 00:30, 06:30, and 13:30 UTC.

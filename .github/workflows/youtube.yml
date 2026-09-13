@@ -9,12 +9,12 @@ on:
         default: false
         type: boolean
   schedule:
-    # 09:00, 13:00, 17:00, 20:00, 22:00 IST (UTC+5:30)
-    - cron: "30 3 * * *"
-    - cron: "30 7 * * *"
-    - cron: "30 11 * * *"
-    - cron: "30 14 * * *"
-    - cron: "30 16 * * *"
+    # 00:00, 04:00, 06:00, 12:00, 19:00 IST (UTC+5:30)
+    - cron: "30 18 * * *"
+    - cron: "30 22 * * *"
+    - cron: "30 0 * * *"
+    - cron: "30 6 * * *"
+    - cron: "30 13 * * *"
 
 concurrency:
   group: youtube-short-pipeline
