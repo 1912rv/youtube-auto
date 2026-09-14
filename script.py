@@ -19,6 +19,7 @@ import random
 import pickle
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -88,6 +89,35 @@ def set_clip_start(clip, start_time):
 
 def set_clip_audio(video_clip, audio_clip):
     return video_clip.with_audio(audio_clip) if hasattr(video_clip, "with_audio") else video_clip.set_audio(audio_clip)
+
+def duck_audio_during_voice(audio_clip, voice_intervals, duck_level=0.28):
+    """Lower the music only while a voiceover interval is active."""
+    def apply_ducking(get_frame, time_value):
+        times = np.asarray(time_value)
+        active = np.zeros(times.shape, dtype=bool)
+        for start, end in voice_intervals:
+            active |= (times >= start) & (times < end)
+        factor = np.where(active, duck_level, 1.0)
+        frames = get_frame(time_value)
+        if times.ndim == 0:
+            return frames * float(factor)
+        return frames * factor[..., np.newaxis]
+
+    return audio_clip.transform(apply_ducking)
+
+def format_srt_time(seconds):
+    milliseconds = int(round(seconds * 1000))
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{whole_seconds:02},{milliseconds:03}"
+
+def write_srt(filename, captions):
+    with open(filename, "w", encoding="utf-8") as subtitle_file:
+        for index, (start, end, text) in enumerate(captions, start=1):
+            subtitle_file.write(
+                f"{index}\n{format_srt_time(start)} --> {format_srt_time(end)}\n{text}\n\n"
+            )
 
 # ---------------- AUDIO GENERATORS ----------------
 import asyncio
@@ -381,7 +411,16 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
 
     return image
 
-def create_reel_frame_array(board_pil, hook_text, side_text, footer_text, is_solution=False, countdown=None):
+def create_reel_frame_array(
+    board_pil,
+    hook_text,
+    side_text,
+    footer_text,
+    is_solution=False,
+    countdown=None,
+    info_text=None,
+    caption=None,
+):
     canvas = Image.new("RGB", (WIDTH, HEIGHT), (15, 15, 18))
     board_resized = board_pil.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
     canvas.paste(board_resized, ((WIDTH - BOARD_SIZE) // 2, 440))
@@ -389,6 +428,8 @@ def create_reel_frame_array(board_pil, hook_text, side_text, footer_text, is_sol
     draw = ImageDraw.Draw(canvas)
     draw_centered_text(draw, hook_text, 90, get_font(68), WIDTH, fill="#FFD700")
     draw_centered_text(draw, side_text, 240, get_font(58), WIDTH, fill="#FFFFFF")
+    if info_text:
+        draw_centered_text(draw, info_text, 315, get_font(28), WIDTH, fill="#A8B3C7")
     draw_centered_text(draw, footer_text, 1550, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
     draw_centered_text(draw, "WAS YOUR MOVE RIGHT?" if is_solution else "COMMENT YOUR NEXT MOVE", 1620, get_font(38), WIDTH, fill="#CCCCCC")
 
@@ -406,9 +447,24 @@ def create_reel_frame_array(board_pil, hook_text, side_text, footer_text, is_sol
 
     if countdown is not None:
         draw_centered_text(draw, f"TIME: {countdown}s", 350, get_font(42), WIDTH, fill="#FF6B6B")
-        progress_width = int((countdown / 7) * 760)
+        progress_width = int((countdown / MIN_PUZZLE_SECONDS) * 760)
         draw.rounded_rectangle((160, 1740, 920, 1770), radius=15, fill="#333333")
         draw.rounded_rectangle((160, 1740, 160 + progress_width, 1770), radius=15, fill="#FF6B6B")
+
+    if caption:
+        caption_font = get_font(30)
+        draw.rounded_rectangle((90, 1800, 990, 1890), radius=18, fill="#000000")
+        for line_index, line in enumerate(fit_text(caption, limit=48)[:2]):
+            draw_centered_text(
+                draw,
+                line,
+                1808 + line_index * 34,
+                caption_font,
+                WIDTH,
+                fill="#FFFFFF",
+                stroke_width=1,
+                stroke_fill="#000000",
+            )
     
     return np.array(canvas)
 
@@ -490,6 +546,11 @@ def run_pipeline():
     print("🧩 Fetching puzzle from Lichess...")
     puzzle_json = fetch_puzzle_from_lichess()
     board, solution_moves = get_board_from_puzzle_json(puzzle_json)
+    puzzle_data = puzzle_json.get("puzzle", {})
+    puzzle_id = puzzle_data.get("id", "unknown")
+    puzzle_rating = puzzle_data.get("rating", "unrated")
+    puzzle_url = f"https://lichess.org/training/{puzzle_id}"
+    info_text = f"Puzzle rating: {puzzle_rating}"
 
     hook = random.choice(HOOKS)
     side_name = "White to move" if board.turn == chess.WHITE else "Black to move"
@@ -498,41 +559,62 @@ def run_pipeline():
     # 1. Render initial board frame
     puzzle_board_pil = generate_board_pil(board)
 
-    # 2. Execute move and render solution frame
-    readable_move = "N/A"
-    sol_board = board.copy()
-    if solution_moves:
+    # 2. Render each valid solution move as its own scene.
+    solution_frames = []
+    solution_captions = []
+    solution_speech = []
+    first_solution_san = "N/A"
+    solution_board = board.copy()
+    for move_index, move_uci in enumerate(solution_moves or [], start=1):
         try:
-            mv = chess.Move.from_uci(solution_moves[0])
-            if mv in sol_board.legal_moves:
-                readable_move = sol_board.san(mv)
-                arrow = chess.svg.Arrow(mv.from_square, mv.to_square, color="#00E676")
-                sol_board.push(mv)
-                sol_board_pil = generate_board_pil(
-                    sol_board,
-                    arrows=[arrow],
-                    perspective=board.turn,
+            move = chess.Move.from_uci(move_uci)
+            if move not in solution_board.legal_moves:
+                break
+            san = solution_board.san(move)
+            if not solution_frames:
+                first_solution_san = san
+            commentary = move_commentary(solution_board, move, san, move_index - 1)
+            _, spoken_line = convert_san_to_speech(side_name, san)
+            arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
+            solution_board.push(move)
+            solution_frames.append(
+                create_reel_frame_array(
+                    generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
+                    "SOLUTION",
+                    side_text,
+                    footer_text=f"Move {move_index}: {san}",
+                    is_solution=True,
+                    info_text=info_text,
+                    caption=commentary,
                 )
-            else:
-                sol_board_pil = puzzle_board_pil
-        except Exception:
-            sol_board_pil = puzzle_board_pil
-    else:
-        sol_board_pil = puzzle_board_pil
+            )
+            solution_captions.append(commentary)
+            solution_speech.append(spoken_line)
+        except (ValueError, chess.IllegalMoveError):
+            break
 
-    sol_frame_np = create_reel_frame_array(
-        sol_board_pil,
-        "SOLUTION",
-        side_text,
-        footer_text=f"Best Move: {readable_move}",
-        is_solution=True,
-    )
+    if not solution_frames:
+        solution_frames = [
+            create_reel_frame_array(
+                puzzle_board_pil,
+                "SOLUTION",
+                side_text,
+                footer_text="No solution move available",
+                is_solution=True,
+                info_text=info_text,
+                caption="No solution was returned for this puzzle.",
+            )
+        ]
+        solution_captions = ["No solution was returned for this puzzle."]
+        solution_speech = ["No solution was returned for this puzzle."]
+
     preview_mode = "--preview" in sys.argv
     if preview_mode:
-        Image.fromarray(sol_frame_np).save(OUTPUT_DIR / "preview_frame.jpg", quality=92)
+        Image.fromarray(solution_frames[-1]).save(OUTPUT_DIR / "preview_frame.jpg", quality=92)
 
     # 3. Audio & Voice Generation
-    p_script, s_script = convert_san_to_speech(side_name, readable_move)
+    p_script, _ = convert_san_to_speech(side_name, first_solution_san)
+    s_script = " ".join(solution_speech)
     
     temp_p_audio = str(OUTPUT_DIR / "temp_p.mp3")
     temp_s_audio = str(OUTPUT_DIR / "temp_s.mp3")
@@ -557,7 +639,13 @@ def run_pipeline():
         solution_duration = max(MIN_SOLUTION_SECONDS, raw_v2.duration + 0.4)
         v2 = raw_v2.with_start(puzzle_duration + 0.2)
         sfx = raw_sfx.with_start(puzzle_duration)
-        background = raw_background.with_volume_scaled(BACKGROUND_VOLUME)
+        voice_intervals = [
+            (0.2, min(puzzle_duration, 0.2 + raw_v1.duration)),
+            (puzzle_duration + 0.2, min(puzzle_duration + solution_duration, puzzle_duration + 0.2 + raw_v2.duration)),
+        ]
+        background = duck_audio_during_voice(
+            raw_background.with_volume_scaled(BACKGROUND_VOLUME), voice_intervals
+        )
 
         puzzle_clips = []
         remaining_duration = puzzle_duration
@@ -569,6 +657,8 @@ def run_pipeline():
                 side_text,
                 footer_text="Find the move!",
                 countdown=countdown,
+                info_text=info_text,
+                caption=p_script,
             )
             puzzle_clips.append(mp.ImageClip(puzzle_frame).with_duration(segment_duration))
             remaining_duration -= segment_duration
@@ -576,11 +666,21 @@ def run_pipeline():
                 break
 
         clip1 = mp.concatenate_videoclips(puzzle_clips, method="compose")
-        clip2 = mp.ImageClip(sol_frame_np).with_duration(solution_duration)
+        solution_frame_duration = solution_duration / len(solution_frames)
+        solution_clips = [
+            mp.ImageClip(frame).with_duration(solution_frame_duration)
+            for frame in solution_frames
+        ]
+        clip2 = mp.concatenate_videoclips(solution_clips, method="compose")
         final_video = mp.concatenate_videoclips([clip1, clip2], method="compose")
         final_video = final_video.with_audio(mp.CompositeAudioClip([background, v1, v2, sfx]))
+        subtitle_entries = [(0.2, min(puzzle_duration, 0.2 + raw_v1.duration), p_script)]
+        for index, caption in enumerate(solution_captions):
+            start = puzzle_duration + (index * solution_frame_duration)
+            subtitle_entries.append((start, start + solution_frame_duration, caption))
+        write_srt(OUTPUT_DIR / "temp_output_short.srt", subtitle_entries)
 
-        print(f"🎬 Rendering Short MP4 video for move: '{readable_move}'...")
+        print(f"🎬 Rendering Short MP4 video for move: '{first_solution_san}'...")
         final_video.write_videofile(
             temp_video,
             fps=FPS,
@@ -612,8 +712,8 @@ def run_pipeline():
             print(f"🎵 Background sound preview created at '{background_file}'.")
         return
 
-    yt_title = f"Can You Solve This Chess Puzzle? 🧩 #Shorts"
-    yt_description = f"Can you find the best move for {side_text}?\n\nBest Move: {readable_move}\n\n#chess #shorts #chesstactics #puzzles"
+    yt_title = f"Can You Solve This Chess Puzzle? {puzzle_id} | {datetime.now(timezone.utc):%Y-%m-%d} #Shorts"
+    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle rating: {puzzle_rating}\nLichess puzzle: {puzzle_url}\n\n#chess #shorts #chesstactics #puzzles"
     
     try:
         upload_success = upload_video_google_api(temp_video, yt_title, yt_description)
