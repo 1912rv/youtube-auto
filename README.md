@@ -8,7 +8,7 @@ The video includes:
 - A 10-second challenge countdown.
 - The original puzzle perspective kept on the solution frame.
 - A highlighted best-move arrow.
-- Voiceover, move sound, and a quiet generated background sound bed.
+- Voiceover, move sound, and a generated cinematic background sound bed.
 - A call to action asking viewers to comment their next move.
 
 Generated audio, tokens, and video files are stored outside the repository by default. No web pages are downloaded locally.
@@ -38,7 +38,11 @@ The preview is written to:
 
 ```text
 %TEMP%\youtube-auto\temp_output_short.mp4
+%TEMP%\youtube-auto\preview_frame.jpg
+%TEMP%\youtube-auto\preview_background.wav
 ```
+
+Use `--no-upload` for a normal render that should also skip YouTube upload. The GitHub workflow uploads only from a manual run or its schedule; pushing code does not upload a video.
 
 ## Game Commentary Videos
 
@@ -114,6 +118,7 @@ The following environment variables are supported:
 | `PUZZLE_FETCH_ATTEMPTS` | `3` | Number of `/next` requests per run |
 | `ALLOW_DAILY_FALLBACK` | `true` | Allow the daily puzzle when `/next` is unavailable; Actions sets this to `false` |
 | `PIECE_STYLE` | `assets` | Board pieces: Lichess-style image set, or `unicode`/`letters` for the fallback renderers |
+| `BACKGROUND_VOLUME` | `0.35` | Background music mix level; `0.30`-`0.40` keeps narration clear |
 
 ## Troubleshooting
 

@@ -57,6 +57,7 @@ PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "3"))
 ALLOW_DAILY_FALLBACK = os.environ.get("ALLOW_DAILY_FALLBACK", "true").lower() == "true"
 FPS = 30
 VOICE_NAME = "en-US-ChristopherNeural"
+BACKGROUND_VOLUME = float(os.environ.get("BACKGROUND_VOLUME", "0.35"))
 PIECE_STYLE = os.environ.get("PIECE_STYLE", "assets").lower()
 PIECE_ASSET_DIR = Path(__file__).with_name("piece_assets")
 
@@ -133,16 +134,33 @@ def generate_chess_move_sound(filename="chess_move.wav", sample_rate=44100):
     return filename
 
 def generate_background_sound(filename="background.wav", sample_rate=44100, duration=20.0):
-    """Create a quiet, royalty-free ambient pulse that sits under the narration."""
+    """Create a calm, entertaining royalty-free chess-short music bed."""
     sample_count = int(sample_rate * duration)
     time_axis = np.arange(sample_count) / sample_rate
-    pulse = 0.5 + 0.5 * np.sin(2 * np.pi * 0.18 * time_axis)
-    low_tone = np.sin(2 * np.pi * 110 * time_axis)
-    high_tone = np.sin(2 * np.pi * 220 * time_axis)
+    beat = 96 / 60
+    bar = np.floor(time_axis * beat / 4).astype(int) % 4
+    roots = np.array((261.63, 196.00, 220.00, 174.61))
+    root = roots[bar]
+    pad = (
+        np.sin(2 * np.pi * root * time_axis)
+        + np.sin(2 * np.pi * root * 1.25 * time_axis)
+        + np.sin(2 * np.pi * root * 1.5 * time_axis)
+        + 0.35 * np.sin(2 * np.pi * root * 2 * time_axis)
+    ) / 3.35
+    bass = np.sin(2 * np.pi * root * 0.5 * time_axis)
+    step = np.floor(time_axis * beat * 2).astype(int) % 8
+    melody_intervals = np.array((2.0, 2.5, 3.0, 2.5, 2.25, 2.5, 3.5, 2.5))
+    melody = np.sin(2 * np.pi * root * melody_intervals[step] * time_axis)
+    pluck_decay = np.exp(-8 * ((time_axis * beat * 2) % 1))
+    soft_kick = np.sin(2 * np.pi * 82 * time_axis) * np.exp(-18 * ((time_axis * beat) % 1))
     envelope = np.minimum(1.0, time_axis / 1.5) * np.minimum(1.0, (duration - time_axis) / 1.5)
-    mix = (0.045 * low_tone + 0.018 * high_tone) * (0.55 + 0.45 * pulse) * np.maximum(0, envelope)
-    audio_int16 = (mix * 32767).astype(np.int16)
-    wavfile.write(filename, sample_rate, np.column_stack((audio_int16, audio_int16)))
+    pulse = 0.85 + 0.15 * np.sin(2 * np.pi * beat * time_axis)
+    mix = (0.032 * pad + 0.018 * bass + 0.009 * melody * pluck_decay + 0.006 * soft_kick) * pulse
+    mix *= np.maximum(0, envelope)
+    left = mix * (1.0 + 0.035 * np.sin(2 * np.pi * 0.17 * time_axis))
+    right = mix * (1.0 - 0.035 * np.sin(2 * np.pi * 0.17 * time_axis))
+    audio_int16 = (np.column_stack((left, right)) * 32767).astype(np.int16)
+    wavfile.write(filename, sample_rate, audio_int16)
     return filename
 
 # ---------------- LICHESS API CLIENT ----------------
@@ -371,26 +389,26 @@ def create_reel_frame_array(board_pil, hook_text, side_text, footer_text, is_sol
     draw = ImageDraw.Draw(canvas)
     draw_centered_text(draw, hook_text, 90, get_font(68), WIDTH, fill="#FFD700")
     draw_centered_text(draw, side_text, 240, get_font(58), WIDTH, fill="#FFFFFF")
-    draw_centered_text(draw, footer_text, 1530, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
-    draw_centered_text(draw, "WAS YOUR MOVE RIGHT?" if is_solution else "COMMENT YOUR NEXT MOVE", 1660, get_font(38), WIDTH, fill="#CCCCCC")
+    draw_centered_text(draw, footer_text, 1550, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
+    draw_centered_text(draw, "WAS YOUR MOVE RIGHT?" if is_solution else "COMMENT YOUR NEXT MOVE", 1620, get_font(38), WIDTH, fill="#CCCCCC")
 
     action_font = get_font(28)
-    like_box = (260, 1718, 500, 1770)
-    subscribe_box = (580, 1718, 820, 1770)
+    like_box = (260, 1465, 500, 1517)
+    subscribe_box = (580, 1465, 820, 1517)
     draw.rounded_rectangle(like_box, radius=18, fill="#E84855")
     draw.rounded_rectangle(subscribe_box, radius=18, fill="#FFFFFF")
     draw.text((like_box[0] + 24, like_box[1] + 10), "♥  LIKE", font=action_font, fill="#FFFFFF")
     bell_fill = "#171717"
-    draw.ellipse((598, 1727, 622, 1750), fill=bell_fill)
-    draw.rectangle((594, 1742, 626, 1755), fill=bell_fill)
-    draw.ellipse((604, 1752, 616, 1761), fill=bell_fill)
+    draw.ellipse((598, 1474, 622, 1497), fill=bell_fill)
+    draw.rectangle((594, 1489, 626, 1502), fill=bell_fill)
+    draw.ellipse((604, 1499, 616, 1508), fill=bell_fill)
     draw.text((640, subscribe_box[1] + 10), "SUBSCRIBE", font=action_font, fill=bell_fill)
 
     if countdown is not None:
         draw_centered_text(draw, f"TIME: {countdown}s", 350, get_font(42), WIDTH, fill="#FF6B6B")
         progress_width = int((countdown / 7) * 760)
-        draw.rounded_rectangle((160, 1780, 920, 1810), radius=15, fill="#333333")
-        draw.rounded_rectangle((160, 1780, 160 + progress_width, 1810), radius=15, fill="#FF6B6B")
+        draw.rounded_rectangle((160, 1740, 920, 1770), radius=15, fill="#333333")
+        draw.rounded_rectangle((160, 1740, 160 + progress_width, 1770), radius=15, fill="#FF6B6B")
     
     return np.array(canvas)
 
@@ -509,6 +527,9 @@ def run_pipeline():
         footer_text=f"Best Move: {readable_move}",
         is_solution=True,
     )
+    preview_mode = "--preview" in sys.argv
+    if preview_mode:
+        Image.fromarray(sol_frame_np).save(OUTPUT_DIR / "preview_frame.jpg", quality=92)
 
     # 3. Audio & Voice Generation
     p_script, s_script = convert_san_to_speech(side_name, readable_move)
@@ -516,7 +537,8 @@ def run_pipeline():
     temp_p_audio = str(OUTPUT_DIR / "temp_p.mp3")
     temp_s_audio = str(OUTPUT_DIR / "temp_s.mp3")
     chess_sfx = generate_chess_move_sound(str(OUTPUT_DIR / "chess_move.wav"))
-    background_audio = generate_background_sound(str(OUTPUT_DIR / "background.wav"))
+    background_file = OUTPUT_DIR / ("preview_background.wav" if preview_mode else "background.wav")
+    background_audio = generate_background_sound(str(background_file))
     temp_video = str(OUTPUT_DIR / "temp_output_short.mp4")
 
     print("🎙️ Synthesizing Voiceovers with Edge-TTS...")
@@ -535,7 +557,7 @@ def run_pipeline():
         solution_duration = max(MIN_SOLUTION_SECONDS, raw_v2.duration + 0.4)
         v2 = raw_v2.with_start(puzzle_duration + 0.2)
         sfx = raw_sfx.with_start(puzzle_duration)
-        background = raw_background.with_volume_scaled(0.12)
+        background = raw_background.with_volume_scaled(BACKGROUND_VOLUME)
 
         puzzle_clips = []
         remaining_duration = puzzle_duration
@@ -577,12 +599,17 @@ def run_pipeline():
                 clip.close()
 
         for temporary_file in [temp_p_audio, temp_s_audio, chess_sfx, background_audio]:
+            if preview_mode and temporary_file == background_audio:
+                continue
             if os.path.exists(temporary_file):
                 os.remove(temporary_file)
 
     # 5. Upload step via Official YouTube Data API v3
-    if "--no-upload" in sys.argv:
+    if preview_mode or "--no-upload" in sys.argv:
         print(f"✅ Video created at '{temp_video}'. Upload skipped via --no-upload flag.")
+        if preview_mode:
+            print(f"🖼️ Still preview created at '{OUTPUT_DIR / 'preview_frame.jpg'}'.")
+            print(f"🎵 Background sound preview created at '{background_file}'.")
         return
 
     yt_title = f"Can You Solve This Chess Puzzle? 🧩 #Shorts"
