@@ -1,6 +1,13 @@
 name: Generate YouTube Short
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - "script.py"
+      - "requirements.txt"
+      - "piece_assets/**"
   workflow_dispatch:
   schedule:
     # 00:00, 04:00, 06:00, 12:00, 19:00 IST (UTC+5:30)
