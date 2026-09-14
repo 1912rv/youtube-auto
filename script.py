@@ -581,7 +581,7 @@ def run_pipeline():
                 os.remove(temporary_file)
 
     # 5. Upload step via Official YouTube Data API v3
-    if "--no-upload" in sys.argv or "--preview" in sys.argv:
+    if "--no-upload" in sys.argv:
         print(f"✅ Video created at '{temp_video}'. Upload skipped via --no-upload flag.")
         return
 
