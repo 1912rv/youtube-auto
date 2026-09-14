@@ -57,6 +57,8 @@ PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "3"))
 ALLOW_DAILY_FALLBACK = os.environ.get("ALLOW_DAILY_FALLBACK", "true").lower() == "true"
 FPS = 30
 VOICE_NAME = "en-US-ChristopherNeural"
+PIECE_STYLE = os.environ.get("PIECE_STYLE", "assets").lower()
+PIECE_ASSET_DIR = Path(__file__).with_name("piece_assets")
 
 HOOKS = [
     # Original
@@ -269,6 +271,21 @@ def get_piece_font(size=48):
                 pass
     return get_font(size)
 
+def get_piece_image(symbol, size):
+    cache_key = (symbol, size)
+    if cache_key not in get_piece_image.cache:
+        asset_name = ("w" if symbol.isupper() else "b") + symbol.upper()
+        asset_path = PIECE_ASSET_DIR / f"{asset_name}.png"
+        if not asset_path.exists():
+            return None
+        with Image.open(asset_path) as source:
+            get_piece_image.cache[cache_key] = source.convert("RGBA").resize(
+                (size, size), Image.Resampling.LANCZOS
+            )
+    return get_piece_image.cache[cache_key]
+
+get_piece_image.cache = {}
+
 def draw_centered_text(draw, text, y, font, width, fill="white", stroke_width=3, stroke_fill="black"):
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w = bbox[2] - bbox[0]
@@ -281,11 +298,16 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
     square_size = size_px // 8
     light_square = "#F0D9B5"
     dark_square = "#B58863"
-    piece_font = get_piece_font(int(square_size * 0.78))
-    pieces = {
+    piece_font = get_font(int(square_size * 0.62)) if PIECE_STYLE == "letters" else get_piece_font(int(square_size * 0.78))
+    letter_pieces = {
+        "P": "P", "N": "N", "B": "B", "R": "R", "Q": "Q", "K": "K",
+        "p": "P", "n": "N", "b": "B", "r": "R", "q": "Q", "k": "K",
+    }
+    unicode_pieces = {
         "P": "♙", "N": "♘", "B": "♗", "R": "♖", "Q": "♕", "K": "♔",
         "p": "♟", "n": "♞", "b": "♝", "r": "♜", "q": "♛", "k": "♚",
     }
+    pieces = letter_pieces if PIECE_STYLE == "letters" else unicode_pieces
     perspective = board.turn if perspective is None else perspective
 
     for file_index in range(8):
@@ -310,20 +332,19 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
         else:
             x = (7 - file_index) * square_size
             y = rank_index * square_size
+        if PIECE_STYLE == "assets":
+            piece_image = get_piece_image(piece.symbol(), square_size)
+            if piece_image is not None:
+                image.paste(piece_image, (x, y), piece_image)
+                continue
+
         label = pieces[piece.symbol()]
         bbox = draw.textbbox((0, 0), label, font=piece_font, stroke_width=2)
         text_x = x + (square_size - (bbox[2] - bbox[0])) / 2 - bbox[0]
         text_y = y + (square_size - (bbox[3] - bbox[1])) / 2 - bbox[1]
         piece_fill = "#F8F8F8" if piece.color == chess.WHITE else "#171717"
         piece_stroke = "#171717" if piece.color == chess.WHITE else "#F8F8F8"
-        draw.text(
-            (text_x, text_y),
-            label,
-            font=piece_font,
-            fill=piece_fill,
-            stroke_width=3,
-            stroke_fill=piece_stroke,
-        )
+        draw.text((text_x, text_y), label, font=piece_font, fill=piece_fill, stroke_width=3, stroke_fill=piece_stroke)
 
     draw.rectangle((0, 0, size_px - 1, size_px - 1), outline="#111111", width=8)
 
@@ -352,6 +373,18 @@ def create_reel_frame_array(board_pil, hook_text, side_text, footer_text, is_sol
     draw_centered_text(draw, side_text, 240, get_font(58), WIDTH, fill="#FFFFFF")
     draw_centered_text(draw, footer_text, 1530, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
     draw_centered_text(draw, "WAS YOUR MOVE RIGHT?" if is_solution else "COMMENT YOUR NEXT MOVE", 1660, get_font(38), WIDTH, fill="#CCCCCC")
+
+    action_font = get_font(28)
+    like_box = (260, 1718, 500, 1770)
+    subscribe_box = (580, 1718, 820, 1770)
+    draw.rounded_rectangle(like_box, radius=18, fill="#E84855")
+    draw.rounded_rectangle(subscribe_box, radius=18, fill="#FFFFFF")
+    draw.text((like_box[0] + 24, like_box[1] + 10), "♥  LIKE", font=action_font, fill="#FFFFFF")
+    bell_fill = "#171717"
+    draw.ellipse((598, 1727, 622, 1750), fill=bell_fill)
+    draw.rectangle((594, 1742, 626, 1755), fill=bell_fill)
+    draw.ellipse((604, 1752, 616, 1761), fill=bell_fill)
+    draw.text((640, subscribe_box[1] + 10), "SUBSCRIBE", font=action_font, fill=bell_fill)
 
     if countdown is not None:
         draw_centered_text(draw, f"TIME: {countdown}s", 350, get_font(42), WIDTH, fill="#FF6B6B")

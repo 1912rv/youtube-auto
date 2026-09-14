@@ -102,6 +102,7 @@ The following environment variables are supported:
 | `MIN_PUZZLE_RATING` | `2000` | Minimum target rating for selected puzzles |
 | `PUZZLE_FETCH_ATTEMPTS` | `3` | Number of `/next` requests per run |
 | `ALLOW_DAILY_FALLBACK` | `true` | Allow the daily puzzle when `/next` is unavailable; Actions sets this to `false` |
+| `PIECE_STYLE` | `assets` | Board pieces: Lichess-style image set, or `unicode`/`letters` for the fallback renderers |
 
 ## Troubleshooting
 
