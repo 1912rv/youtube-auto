@@ -549,7 +549,6 @@ def run_pipeline():
     puzzle_data = puzzle_json.get("puzzle", {})
     puzzle_id = puzzle_data.get("id", "unknown")
     puzzle_rating = puzzle_data.get("rating", "unrated")
-    puzzle_url = f"https://lichess.org/training/{puzzle_id}"
     info_text = f"Puzzle rating: {puzzle_rating}"
 
     hook = random.choice(HOOKS)
@@ -713,7 +712,7 @@ def run_pipeline():
         return
 
     yt_title = f"Can You Solve This Chess Puzzle? {puzzle_id} | {datetime.now(timezone.utc):%Y-%m-%d} #Shorts"
-    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle rating: {puzzle_rating}\nLichess puzzle: {puzzle_url}\n\n#chess #shorts #chesstactics #puzzles"
+    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle rating: {puzzle_rating}\n\n#chess #shorts #chesstactics #puzzles"
     
     try:
         upload_success = upload_video_google_api(temp_video, yt_title, yt_description)
