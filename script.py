@@ -340,6 +340,20 @@ def draw_centered_text(draw, text, y, font, width, fill="white", stroke_width=3,
     x = (width - text_w) // 2
     draw.text((x, y), text, font=font, fill=fill, stroke_width=stroke_width, stroke_fill=stroke_fill)
 
+def fit_text(text, limit=48):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        if current and len(current) + len(word) + 1 > limit:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(current)
+    return lines
+
 def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None):
     image = Image.new("RGB", (size_px, size_px), "#F0D9B5")
     draw = ImageDraw.Draw(image)
