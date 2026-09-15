@@ -153,7 +153,7 @@ def generate_voiceover_file(text, output_file):
 
 def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     if not san_move or san_move == "N/A":
-        return f"{side_text}. Your time starts now. 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.", "Time is up! No solution found."
+        return f"{side_text}. Can you find the best move in this position?", "Time is up! No solution found."
 
     san_clean = san_move.replace("+", " check").replace("#", " checkmate")
     piece_map = {"K": "King ", "Q": "Queen ", "R": "Rook ", "B": "Bishop ", "N": "Knight "}
@@ -165,7 +165,7 @@ def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     else:
         spoken_move = san_clean.replace("x", " takes ") if "x" in san_clean else ("pawn to " + san_clean)
 
-    puzzle_script = f"{side_text}. Your time starts now. 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0."
+    puzzle_script = f"{side_text}. Can you find the best move in this position?"
     reveal_prefix = "Time is up! " if announce_time_up else "The solution continues. "
     solution_script = f"{reveal_prefix}The move is {spoken_move}."
     return puzzle_script, solution_script
