@@ -599,33 +599,29 @@ def run_pipeline():
     solution_speech = []
     first_solution_san = "N/A"
     solution_board = board.copy()
-    for move_index, move_uci in enumerate(solution_moves or [], start=1):
+    solution_move_number = 0
+    for move_uci in solution_moves or []:
         try:
             move = chess.Move.from_uci(move_uci)
             if move not in solution_board.legal_moves:
                 break
             san = solution_board.san(move)
+            is_player_move = solution_board.turn == board.turn
+            arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
+            commentary = move_commentary(solution_board, move, san, solution_move_number + 1)
+            solution_board.push(move)
+            if not is_player_move:
+                continue
+            solution_move_number += 1
             if not solution_frames:
                 first_solution_san = san
-            is_player_move = solution_board.turn == board.turn
-            move_side = "WHITE" if solution_board.turn == chess.WHITE else "BLACK"
-            commentary = move_commentary(solution_board, move, san, move_index)
-            if is_player_move:
-                solution_hook = "BEST MOVE"
-                solution_side = f"{move_side} PLAYS"
-                _, spoken_line = convert_san_to_speech(side_name, san)
-            else:
-                solution_hook = "OPPONENT REPLY"
-                solution_side = f"{move_side} REPLIES"
-                spoken_line = f"The opponent replies with {san}."
-            arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
-            solution_board.push(move)
+            _, spoken_line = convert_san_to_speech(side_name, san)
             solution_frames.append(
                 create_reel_frame_array(
                     generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
-                    solution_hook,
-                    solution_side,
-                    footer_text=f"Move {move_index}: {san}",
+                    "BEST MOVE",
+                    side_text,
+                    footer_text=f"Move {solution_move_number}: {san}",
                     is_solution=True,
                     info_text=info_text,
                     caption=commentary,
