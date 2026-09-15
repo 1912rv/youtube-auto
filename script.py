@@ -68,7 +68,7 @@ HOOKS = [
     "♟️ FIND THE BEST MOVE",
     "🧠 CAN YOU SOLVE THIS?",
     "😈 MOST PLAYERS MISS THIS",
-    "⏳ YOU HAVE 5 SECONDS",
+    "⏳ YOU HAVE 10 SECONDS",
     
     # New Additions
     "👑 GRANDMASTERS SEE THIS INSTANTLY",
@@ -150,9 +150,9 @@ async def generate_edge_tts(text, output_file):
 def generate_voiceover_file(text, output_file):
     asyncio.run(generate_edge_tts(text, output_file))
 
-def convert_san_to_speech(side_text, san_move):
+def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     if not san_move or san_move == "N/A":
-        return f"{side_text}. Can you find the best move in 5 seconds?", "Time is up! No solution found."
+        return f"{side_text}. Can you find the best move in 10 seconds?", "Time is up! No solution found."
 
     san_clean = san_move.replace("+", " check").replace("#", " checkmate")
     piece_map = {"K": "King ", "Q": "Queen ", "R": "Rook ", "B": "Bishop ", "N": "Knight "}
@@ -164,8 +164,9 @@ def convert_san_to_speech(side_text, san_move):
     else:
         spoken_move = san_clean.replace("x", " takes ") if "x" in san_clean else ("pawn to " + san_clean)
 
-    puzzle_script = f"{side_text}. Can you find the best move in 5 seconds?"
-    solution_script = f"Time is up! The best move is {spoken_move}."
+    puzzle_script = f"{side_text}. Can you find the best move in 10 seconds?"
+    reveal_prefix = "Time is up! " if announce_time_up else "The solution continues. "
+    solution_script = f"{reveal_prefix}The move is {spoken_move}."
     return puzzle_script, solution_script
 
 def generate_chess_move_sound(filename="chess_move.wav", sample_rate=44100):
@@ -608,14 +609,16 @@ def run_pipeline():
             san = solution_board.san(move)
             is_player_move = solution_board.turn == board.turn
             arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
-            commentary = move_commentary(solution_board, move, san, solution_move_number + 1)
+            commentary = move_commentary(solution_board, move, san, (solution_move_number * 2) + 1)
             solution_board.push(move)
             if not is_player_move:
                 continue
             solution_move_number += 1
             if not solution_frames:
                 first_solution_san = san
-            _, spoken_line = convert_san_to_speech(side_name, san)
+            _, spoken_line = convert_san_to_speech(
+                side_name, san, announce_time_up=solution_move_number == 1
+            )
             solution_frames.append(
                 create_reel_frame_array(
                     generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
