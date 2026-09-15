@@ -619,7 +619,7 @@ def run_pipeline():
             solution_frames.append(
                 create_reel_frame_array(
                     generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
-                    "BEST MOVE",
+                    "SOLUTION",
                     side_text,
                     footer_text=f"Move {solution_move_number}: {san}",
                     is_solution=True,
