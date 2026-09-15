@@ -80,6 +80,27 @@ HOOKS = [
     "🔥 SACRIFICE EVERYTHING FOR THE WIN",
     "🚨 QUICK! SPOT THE DIRTY TACTIC",
 ]
+
+def move_commentary(board_before, move, san, ply_number):
+    piece = board_before.piece_at(move.from_square)
+    actor = "White" if board_before.turn == chess.WHITE else "Black"
+    if board_before.is_castling(move):
+        idea = "castles to bring the king to safety and connect the rooks"
+    elif board_before.is_capture(move):
+        captured = board_before.piece_at(move.to_square)
+        captured_name = chess.piece_name(captured.piece_type) if captured else "a piece"
+        idea = f"captures {captured_name}, changing the material balance"
+    elif piece and piece.piece_type == chess.PAWN:
+        idea = "takes space and improves the position"
+    else:
+        idea = "improves the piece and keeps the position under control"
+    if san.endswith("#"):
+        idea = "delivers checkmate"
+    elif san.endswith("+"):
+        idea = "comes with check and forces a response"
+    piece_name = chess.piece_name(piece.piece_type) if piece else "move"
+    return f"Move {(ply_number + 1) // 2}. {actor} plays {san}. This {piece_name} {idea}."
+
 # ---------------- MOVIEPY 2.X HELPER COMPATIBILITY ----------------
 def set_clip_duration(clip, duration):
     return clip.with_duration(duration) if hasattr(clip, "with_duration") else clip.set_duration(duration)
@@ -586,7 +607,7 @@ def run_pipeline():
             san = solution_board.san(move)
             if not solution_frames:
                 first_solution_san = san
-            commentary = move_commentary(solution_board, move, san, move_index - 1)
+            commentary = move_commentary(solution_board, move, san, move_index)
             _, spoken_line = convert_san_to_speech(side_name, san)
             arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
             solution_board.push(move)

@@ -44,17 +44,6 @@ The preview is written to:
 
 Use `--no-upload` for a normal render that should also skip YouTube upload. The GitHub workflow uploads only from a manual run or its schedule; pushing code does not upload a video.
 
-## Game Commentary Videos
-
-Create a move-by-move narrated video from a PGN file or a public game URL:
-
-```powershell
-python game_video.py demo_game.pgn -o game-demo.mp4
-python game_video.py "https://lichess.org/GAME_ID" -o lichess-game.mp4
-```
-
-The video length grows with the number of moves. Lichess export URLs are supported directly. Chess.com and ChessBase pages must expose PGN text; otherwise export the game as a `.pgn` file and pass that file. PNG/JPG inputs are supported as visual position scenes, but move commentary requires PGN because a screenshot does not contain the full move history.
-
 To use a different output directory:
 
 ```powershell
