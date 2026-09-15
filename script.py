@@ -608,23 +608,30 @@ def run_pipeline():
                 break
             san = solution_board.san(move)
             is_player_move = solution_board.turn == board.turn
+            move_number = solution_board.fullmove_number
+            move_side = "WHITE" if solution_board.turn == chess.WHITE else "BLACK"
             arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
             commentary = move_commentary(solution_board, move, san, (solution_move_number * 2) + 1)
             solution_board.push(move)
-            if not is_player_move:
-                continue
-            solution_move_number += 1
-            if not solution_frames:
-                first_solution_san = san
-            _, spoken_line = convert_san_to_speech(
-                side_name, san, announce_time_up=solution_move_number == 1
-            )
+            if is_player_move:
+                solution_move_number += 1
+                if not solution_frames:
+                    first_solution_san = san
+                solution_hook = "SOLUTION"
+                solution_side = side_text
+                _, spoken_line = convert_san_to_speech(
+                    side_name, san, announce_time_up=solution_move_number == 1
+                )
+            else:
+                solution_hook = "OPPONENT BEST MOVE"
+                solution_side = f"{move_side} REPLIES"
+                spoken_line = f"The opponent's best move is {san}."
             solution_frames.append(
                 create_reel_frame_array(
                     generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
-                    "SOLUTION",
-                    side_text,
-                    footer_text=f"Move {solution_move_number}: {san}",
+                    solution_hook,
+                    solution_side,
+                    footer_text=f"Move {move_number}: {san}",
                     is_solution=True,
                     info_text=info_text,
                     caption=commentary,
