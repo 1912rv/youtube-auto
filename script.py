@@ -52,6 +52,7 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 WIDTH, HEIGHT = 1080, 1920
 BOARD_SIZE = 1000
 MIN_PUZZLE_SECONDS = 10.0
+COUNTDOWN_SECONDS = 10
 MIN_SOLUTION_SECONDS = 4.0
 MIN_PUZZLE_RATING = int(os.environ.get("MIN_PUZZLE_RATING", "2000"))
 PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "3"))
@@ -152,7 +153,7 @@ def generate_voiceover_file(text, output_file):
 
 def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     if not san_move or san_move == "N/A":
-        return f"{side_text}. Can you find the best move in 10 seconds?", "Time is up! No solution found."
+        return f"{side_text}. Your time starts now. 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.", "Time is up! No solution found."
 
     san_clean = san_move.replace("+", " check").replace("#", " checkmate")
     piece_map = {"K": "King ", "Q": "Queen ", "R": "Rook ", "B": "Bishop ", "N": "Knight "}
@@ -164,7 +165,7 @@ def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     else:
         spoken_move = san_clean.replace("x", " takes ") if "x" in san_clean else ("pawn to " + san_clean)
 
-    puzzle_script = f"{side_text}. Can you find the best move in 10 seconds?"
+    puzzle_script = f"{side_text}. Your time starts now. 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0."
     reveal_prefix = "Time is up! " if announce_time_up else "The solution continues. "
     solution_script = f"{reveal_prefix}The move is {spoken_move}."
     return puzzle_script, solution_script
@@ -698,8 +699,8 @@ def run_pipeline():
 
         puzzle_clips = []
         remaining_duration = puzzle_duration
-        for countdown in range(math.ceil(puzzle_duration), 0, -1):
-            segment_duration = min(1.0, remaining_duration)
+        for countdown in range(COUNTDOWN_SECONDS, -1, -1):
+            segment_duration = min(puzzle_duration / (COUNTDOWN_SECONDS + 1), remaining_duration)
             puzzle_frame = create_reel_frame_array(
                 puzzle_board_pil,
                 hook,
