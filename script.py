@@ -304,11 +304,11 @@ def get_board_from_puzzle_json(puzzle_json):
             raise ValueError("PGN position does not match the first solution move.")
 
     last_move_san = None
-    if last_move_uci and game and 0 <= initial_ply < len(moves):
+    if game and 0 <= initial_ply < len(moves):
         previous_board = game.board()
         for move in moves[:initial_ply]:
             previous_board.push(move)
-        last_move = chess.Move.from_uci(last_move_uci)
+        last_move = chess.Move.from_uci(last_move_uci) if last_move_uci else moves[initial_ply]
         if last_move in previous_board.legal_moves:
             last_move_san = previous_board.san(last_move)
 
@@ -589,17 +589,20 @@ def run_pipeline():
     puzzle_rating = puzzle_data.get("rating", "unrated")
     puzzle_themes = puzzle_data.get("themes", [])
     info_text = f"Puzzle rating: {puzzle_rating}"
-    last_move_text = (
-        f"Opponent played: {last_opponent_move}"
-        if last_opponent_move
-        else "Opponent move completed before solution"
-    )
+    last_move_text = f"Opponent's last move: {last_opponent_move}"
 
     hook = random.choice(HOOKS)
     side_name = "White to move" if board.turn == chess.WHITE else "Black to move"
     side_text = "WHITE TO MOVE" if board.turn == chess.WHITE else "BLACK TO MOVE"
     opponent_arrow = None
     last_move_uci = puzzle_data.get("lastMove")
+    if not last_move_uci:
+        pgn_text = puzzle_json.get("game", {}).get("pgn", "")
+        game = chess.pgn.read_game(io.StringIO(pgn_text)) if pgn_text else None
+        moves = list(game.mainline_moves()) if game else []
+        initial_ply = puzzle_data.get("initialPly", 0)
+        if 0 <= initial_ply < len(moves):
+            last_move_uci = moves[initial_ply].uci()
     if last_move_uci:
         try:
             last_move = chess.Move.from_uci(last_move_uci)
@@ -689,7 +692,7 @@ def run_pipeline():
 
     # Audio Synthesis
     p_script, _ = convert_san_to_speech(side_name, first_solution_san)
-    p_script = f"The opponent played {san_move_to_spoken_text(last_opponent_move)}. {p_script}"
+    p_script = f"The opponent's last move was {san_move_to_spoken_text(last_opponent_move)}. {p_script}"
     s_script = " ".join(solution_speech)
     
     temp_p_audio = str(OUTPUT_DIR / "temp_p.mp3")
