@@ -32,6 +32,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Restore puzzle history
+        uses: actions/cache@v4
+        with:
+          path: /tmp/youtube-auto/puzzle_history.json
+          key: puzzle-history-${{ github.run_id }}
+          restore-keys: |
+            puzzle-history-
+
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
@@ -41,7 +49,7 @@ jobs:
       - name: Generate and upload short
         env:
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-          ALLOW_DAILY_FALLBACK: "false"
-          PUZZLE_FETCH_ATTEMPTS: "3"
+          OUTPUT_DIR: /tmp/youtube-auto
+          PUZZLE_FETCH_ATTEMPTS: "8"
           MIN_PUZZLE_RATING: "2000"
         run: python script.py

@@ -57,9 +57,8 @@ MIN_PUZZLE_SECONDS = 10.0
 COUNTDOWN_SECONDS = 10
 MIN_SOLUTION_SECONDS = 4.0
 MIN_PUZZLE_RATING = int(os.environ.get("MIN_PUZZLE_RATING", "2000"))
-PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "3"))
-ALLOW_DAILY_FALLBACK = os.environ.get("ALLOW_DAILY_FALLBACK", "true").lower() == "true"
-VOICE_NAME = "en-US-ChristopherNeural"
+PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "8"))
+VOICE_NAME = os.environ.get("VOICE_NAME", "en-US-ChristopherNeural")
 BACKGROUND_VOLUME = float(os.environ.get("BACKGROUND_VOLUME", "0.35"))
 
 HOOKS = [
@@ -76,6 +75,14 @@ HOOKS = [
     "☠️ BRUTAL CHECKMATE INCOMING",
     "🔥 SACRIFICE EVERYTHING FOR THE WIN",
     "🚨 QUICK! SPOT THE DIRTY TACTIC",
+]
+
+TITLE_TEMPLATES = [
+    "{hook} ({rating} ELO) #Shorts",
+    "Can You Find the Winning Move for {side}? | {rating} Rating #Shorts",
+    "Chess Puzzle #{puzzle_id}: {hook} #Shorts",
+    "Only {difficulty}% Can Solve This! ({side}) #Shorts",
+    "Master-Level Chess Puzzle | Can You Solve It? #Shorts",
 ]
 
 # ---------------- MOVIEPY 2.X HELPER COMPATIBILITY ----------------
@@ -129,22 +136,30 @@ def generate_voiceover_file(text, output_file):
 
 def convert_san_to_speech(side_text, san_move, announce_time_up=True):
     if not san_move or san_move == "N/A":
-        return f"{side_text}. Can you find the best move in this position?", "Time is up! No solution found."
+        return f"{side_text}. Can you spot the best move here?", "Time's up. I couldn't find a solution."
+
+    spoken_move = san_move_to_spoken_text(san_move)
+
+    puzzle_script = f"{side_text}. Take a moment and see if you can find the best move."
+    reveal_prefix = "Time's up. " if announce_time_up else "The line continues. "
+    finish_line = " That's checkmate! The game is over." if "#" in san_move else ""
+    solution_script = f"{reveal_prefix}The move is {spoken_move}.{finish_line}"
+    return puzzle_script, solution_script
+
+def san_move_to_spoken_text(san_move):
+    if not san_move:
+        return "the opponent's move"
 
     san_clean = san_move.replace("+", " check").replace("#", " checkmate")
-    piece_map = {"K": "King ", "Q": "Queen ", "R": "Rook ", "B": "Bishop ", "N": "Knight "}
-
-    if san_clean and san_clean[0] in piece_map:
+    piece_map = {"K": "king", "Q": "queen", "R": "rook", "B": "bishop", "N": "knight"}
+    if san_clean[0] in piece_map:
         piece = piece_map[san_clean[0]]
         move_body = san_clean[1:]
-        spoken_move = (piece + "takes " + move_body.replace("x", "")) if "x" in move_body else (piece + "to " + move_body)
-    else:
-        spoken_move = san_clean.replace("x", " takes ") if "x" in san_clean else ("pawn to " + san_clean)
+        if "x" in move_body:
+            return f"{piece} takes {move_body.replace('x', '')}"
+        return f"{piece} to {move_body}"
 
-    puzzle_script = f"{side_text}. Can you find the best move in this position?"
-    reveal_prefix = "Time is up! " if announce_time_up else "The solution continues. "
-    solution_script = f"{reveal_prefix}The move is {spoken_move}."
-    return puzzle_script, solution_script
+    return f"pawn takes {san_clean.replace('x', '')}" if "x" in san_clean else f"pawn to {san_clean}"
 
 def generate_chess_move_sound(filename="chess_move.wav", sample_rate=44100):
     duration = 0.12
@@ -204,7 +219,12 @@ def fetch_puzzle_from_lichess():
     for attempt in range(PUZZLE_FETCH_ATTEMPTS):
         if attempt:
             time.sleep(1.1)
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(
+            url,
+            headers=headers,
+            params={"fresh": time.time_ns()},
+            timeout=30,
+        )
         if response.status_code == 429:
             break
         response.raise_for_status()
@@ -218,23 +238,13 @@ def fetch_puzzle_from_lichess():
             if rating >= MIN_PUZZLE_RATING:
                 break
 
-    if candidates:
-        rating, selected = max(candidates, key=lambda candidate: candidate[0])
-    else:
-        if not ALLOW_DAILY_FALLBACK:
-            raise RuntimeError("No new Lichess puzzle was available; daily fallback is disabled.")
-        fallback = requests.get(
-            "https://lichess.org/api/puzzle/daily",
-            headers=headers,
-            timeout=30,
+    if not candidates:
+        raise RuntimeError(
+            f"Could not fetch a new Lichess puzzle after {PUZZLE_FETCH_ATTEMPTS} attempts. "
+            "No video was generated to avoid reusing an old puzzle."
         )
-        fallback.raise_for_status()
-        selected = fallback.json()
-        rating = selected.get("puzzle", {}).get("rating")
-        puzzle_id = selected.get("puzzle", {}).get("id")
-        if puzzle_id in seen_ids:
-            raise RuntimeError("Lichess returned a puzzle already used by this project; try again later.")
-        print(f"⚠️ Using Lichess daily fallback rated {rating}; target was {MIN_PUZZLE_RATING}+")
+
+    rating, selected = max(candidates, key=lambda candidate: candidate[0])
 
     puzzle_id = selected.get("puzzle", {}).get("id")
     if not puzzle_id:
@@ -247,49 +257,62 @@ def fetch_puzzle_from_lichess():
     
     return selected, puzzle_link
 
+def get_puzzle_difficulty(rating):
+    try:
+        rating = int(rating)
+    except (TypeError, ValueError):
+        return "Advanced Tactic"
+
+    if rating < 1500:
+        return "Beginner Trick"
+    if rating < 2000:
+        return "Intermediate Tactic"
+    return "Grandmaster Level"
+
+def get_primary_puzzle_theme(themes):
+    if not themes:
+        return None
+
+    theme = str(themes[0])
+    readable_theme = "".join(
+        f" {character.lower()}" if character.isupper() else character
+        for character in theme
+    ).strip()
+    return readable_theme.title()
+
 def get_board_from_puzzle_json(puzzle_json):
-    solution = puzzle_json.get("puzzle", {}).get("solution", [])
-    initial_ply = puzzle_json.get("puzzle", {}).get("initialPly", 0)
-    fen = puzzle_json.get("fen")
+    puzzle_data = puzzle_json.get("puzzle", {})
+    solution = puzzle_data.get("solution", [])
+    initial_ply = puzzle_data.get("initialPly", 0)
+    last_move_uci = puzzle_data.get("lastMove")
+    fen = puzzle_data.get("fen") or puzzle_json.get("fen")
+    pgn_text = puzzle_json.get("game", {}).get("pgn", "")
+    game = chess.pgn.read_game(io.StringIO(pgn_text)) if pgn_text else None
+    moves = list(game.mainline_moves()) if game else []
 
     if fen:
-        fen_board = chess.Board(fen)
-        if not solution or chess.Move.from_uci(solution[0]) in fen_board.legal_moves:
-            return fen_board, solution
+        board = chess.Board(fen)
+        if solution and chess.Move.from_uci(solution[0]) not in board.legal_moves:
+            raise ValueError("Lichess FEN does not match the first solution move.")
+    else:
+        if not game:
+            raise ValueError("No FEN or PGN found in puzzle payload.")
+        board = game.board()
+        for move in moves[:initial_ply + 1]:
+            board.push(move)
+        if solution and chess.Move.from_uci(solution[0]) not in board.legal_moves:
+            raise ValueError("PGN position does not match the first solution move.")
 
-    pgn_text = puzzle_json.get("game", {}).get("pgn", "")
-    if not pgn_text:
-        raise ValueError("No FEN or PGN found in puzzle payload.")
-        
-    game = chess.pgn.read_game(io.StringIO(pgn_text))
-    moves = list(game.mainline_moves())
+    last_move_san = None
+    if last_move_uci and game and 0 <= initial_ply < len(moves):
+        previous_board = game.board()
+        for move in moves[:initial_ply]:
+            previous_board.push(move)
+        last_move = chess.Move.from_uci(last_move_uci)
+        if last_move in previous_board.legal_moves:
+            last_move_san = previous_board.san(last_move)
 
-    candidate_plies = [initial_ply, initial_ply - 1, initial_ply + 1]
-    first_move = solution[0] if solution else None
-    
-    for ply in candidate_plies:
-        if 0 <= ply <= len(moves):
-            board = game.board()
-            for mv in moves[:ply]:
-                board.push(mv)
-            if first_move:
-                try:
-                    if chess.Move.from_uci(first_move) in board.legal_moves:
-                        return board, solution
-                except Exception:
-                    pass
-            else:
-                return board, solution
-
-    board = game.board()
-    for mv in moves[:initial_ply]:
-        board.push(mv)
-
-    if solution and chess.Move.from_uci(solution[0]) not in board.legal_moves:
-        if len(moves) > initial_ply:
-            board.push(moves[initial_ply])
-
-    return board, solution
+    return board, solution, last_move_san or last_move_uci
 
 # ---------------- PIECE SVG RENDERER ----------------
 piece_image_cache = {}
@@ -401,7 +424,19 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
         else:
             start = ((7 - start_file + 0.5) * square_size, (start_rank + 0.5) * square_size)
             end = ((7 - end_file + 0.5) * square_size, (end_rank + 0.5) * square_size)
-        draw.line((start, end), fill="#00E676", width=max(8, square_size // 16))
+        arrow_color = getattr(arrow, "color", None) or "#00E676"
+        line_width = max(8, square_size // 16)
+        draw.line((start, end), fill=arrow_color, width=line_width)
+        direction = np.array(end) - np.array(start)
+        length = np.linalg.norm(direction)
+        if length:
+            unit = direction / length
+            perpendicular = np.array((-unit[1], unit[0]))
+            tip = np.array(end)
+            base = tip - unit * (square_size * 0.28)
+            left = base + perpendicular * (square_size * 0.14)
+            right = base - perpendicular * (square_size * 0.14)
+            draw.polygon([tuple(tip), tuple(left), tuple(right)], fill=arrow_color)
 
     return image
 
@@ -413,38 +448,45 @@ def create_reel_frame_array(
     is_solution=False,
     countdown=None,
     info_text=None,
+    last_move_text=None,
     caption=None,
     puzzle_link="",
 ):
     canvas = Image.new("RGB", (WIDTH, HEIGHT), (15, 15, 18))
     board_resized = board_pil.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
     canvas.paste(board_resized, ((WIDTH - BOARD_SIZE) // 2, 440))
+    "🔥 ONLY 1% CAN SOLVE THIS",
+    "♟️ FIND THE BEST MOVE",
+    "🚨 QUICK! SPOT THE DIRTY TACTIC",
 
     draw = ImageDraw.Draw(canvas)
     draw_centered_text(draw, hook_text, 90, get_font(68), WIDTH, fill="#FFD700")
     draw_centered_text(draw, side_text, 240, get_font(58), WIDTH, fill="#FFFFFF")
+    if last_move_text:
+        draw.rounded_rectangle((70, 290, 1010, 365), radius=18, fill="#3A2615", outline="#FFB86C", width=3)
+        draw_centered_text(draw, last_move_text, 306, get_font(34), WIDTH, fill="#FFD18A")
     if info_text:
-        draw_centered_text(draw, info_text, 315, get_font(28), WIDTH, fill="#A8B3C7")
-    draw_centered_text(draw, footer_text, 1440, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
-
-    # Render Clickable / Interactive Lichess Puzzle Link
-    if puzzle_link:
-        draw_centered_text(draw, f"Puzzle: {puzzle_link}", 1510, get_font(30), WIDTH, fill="#00BFFF")
-
+        draw_centered_text(draw, info_text, 375, get_font(28), WIDTH, fill="#A8B3C7")
     action_font = get_font(28)
-    like_box = (260, 1570, 500, 1622)
-    subscribe_box = (580, 1570, 820, 1622)
+    like_box = (260, 1415, 500, 1467)
+    subscribe_box = (580, 1415, 820, 1467)
     draw.rounded_rectangle(like_box, radius=18, fill="#E84855")
     draw.rounded_rectangle(subscribe_box, radius=18, fill="#FFFFFF")
     draw.text((like_box[0] + 24, like_box[1] + 10), "♥  LIKE", font=action_font, fill="#FFFFFF")
     bell_fill = "#171717"
-    draw.ellipse((598, 1579, 622, 1602), fill=bell_fill)
-    draw.rectangle((594, 1594, 626, 1607), fill=bell_fill)
-    draw.ellipse((604, 1604, 616, 1613), fill=bell_fill)
+    draw.ellipse((598, 1424, 622, 1447), fill=bell_fill)
+    draw.rectangle((594, 1439, 626, 1452), fill=bell_fill)
+    draw.ellipse((604, 1449, 616, 1458), fill=bell_fill)
     draw.text((640, subscribe_box[1] + 10), "SUBSCRIBE", font=action_font, fill=bell_fill)
 
+    draw_centered_text(draw, footer_text, 1490, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
+
+    # Render Clickable / Interactive Lichess Puzzle Link
+    if puzzle_link:
+        draw_centered_text(draw, f"Puzzle: {puzzle_link}", 1570, get_font(30), WIDTH, fill="#00BFFF")
+
     if countdown is not None:
-        draw_centered_text(draw, f"TIME: {countdown}s", 350, get_font(42), WIDTH, fill="#FF6B6B")
+        draw_centered_text(draw, f"TIME: {countdown}s", 410, get_font(42), WIDTH, fill="#FF6B6B")
         progress_width = int((countdown / MIN_PUZZLE_SECONDS) * 760)
         draw.rounded_rectangle((160, 1740, 920, 1770), radius=15, fill="#333333")
         draw.rounded_rectangle((160, 1740, 160 + progress_width, 1770), radius=15, fill="#FF6B6B")
@@ -541,18 +583,36 @@ def upload_video_google_api(video_path, title, description, tags=None):
 def run_pipeline():
     print("🧩 Fetching puzzle from Lichess...")
     puzzle_json, puzzle_url = fetch_puzzle_from_lichess()
-    board, solution_moves = get_board_from_puzzle_json(puzzle_json)
+    board, solution_moves, last_opponent_move = get_board_from_puzzle_json(puzzle_json)
     puzzle_data = puzzle_json.get("puzzle", {})
     puzzle_id = puzzle_data.get("id", "unknown")
     puzzle_rating = puzzle_data.get("rating", "unrated")
+    puzzle_themes = puzzle_data.get("themes", [])
     info_text = f"Puzzle rating: {puzzle_rating}"
+    last_move_text = (
+        f"Opponent played: {last_opponent_move}"
+        if last_opponent_move
+        else "Opponent move completed before solution"
+    )
 
     hook = random.choice(HOOKS)
     side_name = "White to move" if board.turn == chess.WHITE else "Black to move"
     side_text = "WHITE TO MOVE" if board.turn == chess.WHITE else "BLACK TO MOVE"
+    opponent_arrow = None
+    last_move_uci = puzzle_data.get("lastMove")
+    if last_move_uci:
+        try:
+            last_move = chess.Move.from_uci(last_move_uci)
+            opponent_arrow = chess.svg.Arrow(
+                last_move.from_square,
+                last_move.to_square,
+                color="#FF9F1C",
+            )
+        except ValueError:
+            pass
     
     # Render initial board frame
-    puzzle_board_pil = generate_board_pil(board)
+    puzzle_board_pil = generate_board_pil(board, arrows=[opponent_arrow] if opponent_arrow else None)
 
     # Render solution moves
     solution_frames = []
@@ -586,7 +646,8 @@ def run_pipeline():
             else:
                 solution_hook = "OPPONENT BEST MOVE"
                 solution_side = f"{move_side} REPLIES"
-                spoken_line = f"The opponent plays {san}."
+                checkmate_suffix = " That's checkmate!" if "#" in san else ""
+                spoken_line = f"Now the opponent answers with {san_move_to_spoken_text(san)}.{checkmate_suffix}"
 
             commentary = f"Move {move_number}: {san}"
             solution_frames.append(
@@ -628,6 +689,7 @@ def run_pipeline():
 
     # Audio Synthesis
     p_script, _ = convert_san_to_speech(side_name, first_solution_san)
+    p_script = f"The opponent played {san_move_to_spoken_text(last_opponent_move)}. {p_script}"
     s_script = " ".join(solution_speech)
     
     temp_p_audio = str(OUTPUT_DIR / "temp_p.mp3")
@@ -672,6 +734,7 @@ def run_pipeline():
                 footer_text="Find the move!",
                 countdown=countdown,
                 info_text=info_text,
+                last_move_text=last_move_text,
                 caption=p_script,
                 puzzle_link=puzzle_url,
             )
@@ -718,8 +781,19 @@ def run_pipeline():
         print(f"✅ Video generated locally at: '{temp_video}' (Upload skipped).")
         return
 
-    yt_title = f"Can You Solve This Chess Puzzle? {puzzle_id} | {datetime.now(timezone.utc):%Y-%m-%d} #Shorts"
-    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle Rating: {puzzle_rating}\nPlay on Lichess: {puzzle_url}\n\n#chess #shorts #chesstactics #puzzles"
+    selected_template = random.choice(TITLE_TEMPLATES)
+    difficulty_label = get_puzzle_difficulty(puzzle_rating)
+    primary_theme = get_primary_puzzle_theme(puzzle_themes)
+    yt_title = selected_template.format(
+        hook=hook,
+        rating=puzzle_rating,
+        side="White" if board.turn == chess.WHITE else "Black",
+        puzzle_id=puzzle_id,
+        difficulty="1" if difficulty_label == "Grandmaster Level" else "5",
+    )
+    if primary_theme:
+        yt_title = f"{yt_title} | {primary_theme} | {difficulty_label}"
+    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle Rating: {puzzle_rating}\nPuzzle link: {puzzle_url}\n\n#chess #shorts #chesstactics #puzzles"
     
     upload_video_google_api(temp_video, yt_title, yt_description)
 

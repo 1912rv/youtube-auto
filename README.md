@@ -104,8 +104,7 @@ The following environment variables are supported:
 | --- | --- | --- |
 | `OUTPUT_DIR` | System temporary directory | Generated media and local token location |
 | `MIN_PUZZLE_RATING` | `2000` | Minimum target rating for selected puzzles |
-| `PUZZLE_FETCH_ATTEMPTS` | `3` | Number of `/next` requests per run |
-| `ALLOW_DAILY_FALLBACK` | `true` | Allow the daily puzzle when `/next` is unavailable; Actions sets this to `false` |
+| `PUZZLE_FETCH_ATTEMPTS` | `8` | Number of cache-busted `/next` requests per run |
 | `PIECE_STYLE` | `assets` | Board pieces: Lichess-style image set, or `unicode`/`letters` for the fallback renderers |
 | `BACKGROUND_VOLUME` | `0.35` | Background music mix level; `0.30`-`0.40` keeps narration clear |
 
