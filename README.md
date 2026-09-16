@@ -89,10 +89,11 @@ Scheduled runs publish automatically at these India Standard Time slots:
 | IST | UTC cron time |
 | --- | --- |
 | 12:00 AM | 6:30 PM previous day |
-| 4:00 AM | 10:30 PM previous day |
 | 6:00 AM | 12:30 AM |
+| 9:00 AM | 3:30 AM |
 | 12:00 PM | 6:30 AM |
-| 7:00 PM | 1:30 PM |
+| 6:00 PM | 12:30 PM |
+| 9:00 PM | 3:30 PM |
 
 GitHub Actions cron uses UTC and can start a few minutes late. Scheduled runs require a fresh Lichess `/next` puzzle rated `2000+`. The daily fallback is disabled in Actions, so a run fails instead of uploading a repeated daily puzzle when Lichess is rate-limited or does not return a new hard puzzle.
 
