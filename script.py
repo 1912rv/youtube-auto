@@ -2,12 +2,12 @@
 """
 chess_short_pipeline.py
 
-Complete working pipeline for Lichess puzzle Shorts:
-1. Fetches daily/random puzzle data from Lichess API
-2. Draws vertical 9:16 video frames (CairoSVG + Pillow)
-3. Generates neural voiceovers via Edge-TTS & move sound effects via Scipy
-4. Composes MP4 video using MoviePy 2.x
-5. Automatically uploads via Official YouTube Data API v3 (videos.insert)
+Complete working local pipeline for Lichess puzzle Shorts:
+1. Fetches daily/random puzzle data from Lichess API & generates direct Lichess link.
+2. Draws vertical 9:16 video frames with Pillow & CairoSVG.
+3. Generates neural voiceovers via Edge-TTS & move sound effects via Scipy.
+4. Composes MP4 video using MoviePy 2.x with the Lichess link printed in captions.
+5. Automatically uploads via Official YouTube Data API v3 (videos.insert).
 """
 
 import os
@@ -26,6 +26,7 @@ import requests
 import chess
 import chess.pgn
 import chess.svg
+import cairosvg
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from scipy.io import wavfile
@@ -50,28 +51,23 @@ PUZZLE_HISTORY_FILE = OUTPUT_DIR / "puzzle_history.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 WIDTH, HEIGHT = 1080, 1920
-BOARD_SIZE = 1000
+BOARD_SIZE = 960
+FPS = 30
 MIN_PUZZLE_SECONDS = 10.0
 COUNTDOWN_SECONDS = 10
 MIN_SOLUTION_SECONDS = 4.0
 MIN_PUZZLE_RATING = int(os.environ.get("MIN_PUZZLE_RATING", "2000"))
 PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "3"))
 ALLOW_DAILY_FALLBACK = os.environ.get("ALLOW_DAILY_FALLBACK", "true").lower() == "true"
-FPS = 30
 VOICE_NAME = "en-US-ChristopherNeural"
 BACKGROUND_VOLUME = float(os.environ.get("BACKGROUND_VOLUME", "0.35"))
-PIECE_STYLE = os.environ.get("PIECE_STYLE", "assets").lower()
-PIECE_ASSET_DIR = Path(__file__).with_name("piece_assets")
 
 HOOKS = [
-    # Original
     "🔥 ONLY 1% CAN SOLVE THIS",
     "♟️ FIND THE BEST MOVE",
     "🧠 CAN YOU SOLVE THIS?",
     "😈 MOST PLAYERS MISS THIS",
     "⏳ YOU HAVE 10 SECONDS",
-    
-    # New Additions
     "👑 GRANDMASTERS SEE THIS INSTANTLY",
     "😱 LOOKS WINNING... BUT IT'S A TRAP",
     "⚡ 3 SECONDS TO SAVE THE GAME",
@@ -81,26 +77,6 @@ HOOKS = [
     "🔥 SACRIFICE EVERYTHING FOR THE WIN",
     "🚨 QUICK! SPOT THE DIRTY TACTIC",
 ]
-
-def move_commentary(board_before, move, san, ply_number):
-    piece = board_before.piece_at(move.from_square)
-    actor = "White" if board_before.turn == chess.WHITE else "Black"
-    if board_before.is_castling(move):
-        idea = "castles to bring the king to safety and connect the rooks"
-    elif board_before.is_capture(move):
-        captured = board_before.piece_at(move.to_square)
-        captured_name = chess.piece_name(captured.piece_type) if captured else "a piece"
-        idea = f"captures {captured_name}, changing the material balance"
-    elif piece and piece.piece_type == chess.PAWN:
-        idea = "takes space and improves the position"
-    else:
-        idea = "improves the piece and keeps the position under control"
-    if san.endswith("#"):
-        idea = "delivers checkmate"
-    elif san.endswith("+"):
-        idea = "comes with check and forces a response"
-    piece_name = chess.piece_name(piece.piece_type) if piece else "move"
-    return f"Move {(ply_number + 1) // 2}. {actor} plays {san}. This {piece_name} {idea}."
 
 # ---------------- MOVIEPY 2.X HELPER COMPATIBILITY ----------------
 def set_clip_duration(clip, duration):
@@ -187,7 +163,6 @@ def generate_chess_move_sound(filename="chess_move.wav", sample_rate=44100):
     return filename
 
 def generate_background_sound(filename="background.wav", sample_rate=44100, duration=20.0):
-    """Create a calm, entertaining royalty-free chess-short music bed."""
     sample_count = int(sample_rate * duration)
     time_axis = np.arange(sample_count) / sample_rate
     beat = 96 / 60
@@ -266,9 +241,11 @@ def fetch_puzzle_from_lichess():
         raise ValueError("Lichess puzzle response did not include an ID.")
     history = list(seen_ids | {puzzle_id})[-100:]
     PUZZLE_HISTORY_FILE.write_text(json.dumps(history), encoding="utf-8")
-    if candidates:
-        print(f"🎯 Selected new hard puzzle rated {rating} (target: {MIN_PUZZLE_RATING}+)")
-    return selected
+    
+    puzzle_link = f"https://lichess.org/training/{puzzle_id}"
+    print(f"🎯 Selected Lichess Puzzle: {puzzle_link} (Rating: {rating})")
+    
+    return selected, puzzle_link
 
 def get_board_from_puzzle_json(puzzle_json):
     solution = puzzle_json.get("puzzle", {}).get("solution", [])
@@ -307,7 +284,34 @@ def get_board_from_puzzle_json(puzzle_json):
     board = game.board()
     for mv in moves[:initial_ply]:
         board.push(mv)
+
+    if solution and chess.Move.from_uci(solution[0]) not in board.legal_moves:
+        if len(moves) > initial_ply:
+            board.push(moves[initial_ply])
+
     return board, solution
+
+# ---------------- PIECE SVG RENDERER ----------------
+piece_image_cache = {}
+
+def get_piece_image(symbol, size):
+    cache_key = (symbol, size)
+    if cache_key in piece_image_cache:
+        return piece_image_cache[cache_key]
+
+    asset_name = ("w" if symbol.isupper() else "b") + symbol.upper()
+    url = f"https://raw.githubusercontent.com/lichess-org/lila/master/public/piece/cburnett/{asset_name}.svg"
+    
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        png_data = cairosvg.svg2png(bytestring=res.content, output_width=size, output_height=size)
+        img = Image.open(io.BytesIO(png_data)).convert("RGBA")
+        piece_image_cache[cache_key] = img
+        return img
+    except Exception:
+        piece_image_cache[cache_key] = None
+        return None
 
 # ---------------- BOARD & GRAPHICS RENDERER ----------------
 def get_font(size=48):
@@ -327,35 +331,6 @@ def get_font(size=48):
         return ImageFont.load_default(size=size)
     except TypeError:
         return ImageFont.load_default()
-
-def get_piece_font(size=48):
-    candidates = [
-        "C:\\Windows\\Fonts\\seguisym.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size=size)
-            except Exception:
-                pass
-    return get_font(size)
-
-def get_piece_image(symbol, size):
-    cache_key = (symbol, size)
-    if cache_key not in get_piece_image.cache:
-        asset_name = ("w" if symbol.isupper() else "b") + symbol.upper()
-        asset_path = PIECE_ASSET_DIR / f"{asset_name}.png"
-        if not asset_path.exists():
-            return None
-        with Image.open(asset_path) as source:
-            get_piece_image.cache[cache_key] = source.convert("RGBA").resize(
-                (size, size), Image.Resampling.LANCZOS
-            )
-    return get_piece_image.cache[cache_key]
-
-get_piece_image.cache = {}
 
 def draw_centered_text(draw, text, y, font, width, fill="white", stroke_width=3, stroke_fill="black"):
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -383,16 +358,7 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
     square_size = size_px // 8
     light_square = "#F0D9B5"
     dark_square = "#B58863"
-    piece_font = get_font(int(square_size * 0.62)) if PIECE_STYLE == "letters" else get_piece_font(int(square_size * 0.78))
-    letter_pieces = {
-        "P": "P", "N": "N", "B": "B", "R": "R", "Q": "Q", "K": "K",
-        "p": "P", "n": "N", "b": "B", "r": "R", "q": "Q", "k": "K",
-    }
-    unicode_pieces = {
-        "P": "♙", "N": "♘", "B": "♗", "R": "♖", "Q": "♕", "K": "♔",
-        "p": "♟", "n": "♞", "b": "♝", "r": "♜", "q": "♛", "k": "♚",
-    }
-    pieces = letter_pieces if PIECE_STYLE == "letters" else unicode_pieces
+
     perspective = board.turn if perspective is None else perspective
 
     for file_index in range(8):
@@ -417,19 +383,10 @@ def generate_board_pil(board, arrows=None, size_px=BOARD_SIZE, perspective=None)
         else:
             x = (7 - file_index) * square_size
             y = rank_index * square_size
-        if PIECE_STYLE == "assets":
-            piece_image = get_piece_image(piece.symbol(), square_size)
-            if piece_image is not None:
-                image.paste(piece_image, (x, y), piece_image)
-                continue
-
-        label = pieces[piece.symbol()]
-        bbox = draw.textbbox((0, 0), label, font=piece_font, stroke_width=2)
-        text_x = x + (square_size - (bbox[2] - bbox[0])) / 2 - bbox[0]
-        text_y = y + (square_size - (bbox[3] - bbox[1])) / 2 - bbox[1]
-        piece_fill = "#F8F8F8" if piece.color == chess.WHITE else "#171717"
-        piece_stroke = "#171717" if piece.color == chess.WHITE else "#F8F8F8"
-        draw.text((text_x, text_y), label, font=piece_font, fill=piece_fill, stroke_width=3, stroke_fill=piece_stroke)
+            
+        piece_image = get_piece_image(piece.symbol(), square_size)
+        if piece_image is not None:
+            image.paste(piece_image, (x, y), piece_image)
 
     draw.rectangle((0, 0, size_px - 1, size_px - 1), outline="#111111", width=8)
 
@@ -457,6 +414,7 @@ def create_reel_frame_array(
     countdown=None,
     info_text=None,
     caption=None,
+    puzzle_link="",
 ):
     canvas = Image.new("RGB", (WIDTH, HEIGHT), (15, 15, 18))
     board_resized = board_pil.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
@@ -467,19 +425,22 @@ def create_reel_frame_array(
     draw_centered_text(draw, side_text, 240, get_font(58), WIDTH, fill="#FFFFFF")
     if info_text:
         draw_centered_text(draw, info_text, 315, get_font(28), WIDTH, fill="#A8B3C7")
-    draw_centered_text(draw, footer_text, 1550, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
-    draw_centered_text(draw, "WAS YOUR MOVE RIGHT?" if is_solution else "COMMENT YOUR NEXT MOVE", 1620, get_font(38), WIDTH, fill="#CCCCCC")
+    draw_centered_text(draw, footer_text, 1440, get_font(54), WIDTH, fill="#00FF7F" if is_solution else "#FFFFFF")
+
+    # Render Clickable / Interactive Lichess Puzzle Link
+    if puzzle_link:
+        draw_centered_text(draw, f"Puzzle: {puzzle_link}", 1510, get_font(30), WIDTH, fill="#00BFFF")
 
     action_font = get_font(28)
-    like_box = (260, 1465, 500, 1517)
-    subscribe_box = (580, 1465, 820, 1517)
+    like_box = (260, 1570, 500, 1622)
+    subscribe_box = (580, 1570, 820, 1622)
     draw.rounded_rectangle(like_box, radius=18, fill="#E84855")
     draw.rounded_rectangle(subscribe_box, radius=18, fill="#FFFFFF")
     draw.text((like_box[0] + 24, like_box[1] + 10), "♥  LIKE", font=action_font, fill="#FFFFFF")
     bell_fill = "#171717"
-    draw.ellipse((598, 1474, 622, 1497), fill=bell_fill)
-    draw.rectangle((594, 1489, 626, 1502), fill=bell_fill)
-    draw.ellipse((604, 1499, 616, 1508), fill=bell_fill)
+    draw.ellipse((598, 1579, 622, 1602), fill=bell_fill)
+    draw.rectangle((594, 1594, 626, 1607), fill=bell_fill)
+    draw.ellipse((604, 1604, 616, 1613), fill=bell_fill)
     draw.text((640, subscribe_box[1] + 10), "SUBSCRIBE", font=action_font, fill=bell_fill)
 
     if countdown is not None:
@@ -516,7 +477,6 @@ def get_youtube_authenticated_service():
         with open(TOKEN_PICKLE_FILE, 'rb') as token:
             creds = pickle.load(token)
 
-    # Refresh token if expired or authenticate for first time
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -530,7 +490,6 @@ def get_youtube_authenticated_service():
             flow = InstalledAppFlow.from_client_config(json.loads(client_secret_json), SCOPES)
             creds = flow.run_local_server(port=0)
 
-        # Save credentials for future execution
         with open(TOKEN_PICKLE_FILE, 'wb') as token:
             pickle.dump(creds, token)
 
@@ -545,8 +504,8 @@ def upload_video_google_api(video_path, title, description, tags=None):
             'snippet': {
                 'title': title,
                 'description': description,
-                'tags': tags or ['chess', 'shorts', 'chesstactics', 'puzzles'],
-                'categoryId': '24'  # Category: Entertainment / Gaming
+                'tags': tags or ['chess', 'shorts', 'chesstactics', 'puzzles', 'lichess'],
+                'categoryId': '24'
             },
             'status': {
                 'privacyStatus': 'public',
@@ -571,7 +530,7 @@ def upload_video_google_api(video_path, title, description, tags=None):
 
         video_id = response.get('id')
         print(f"✅ Video successfully uploaded! Video ID: {video_id}")
-        print(f"🔗 URL: https://youtube.com/shorts/{video_id}")
+        print(f"🔗 YouTube Short URL: https://youtube.com/shorts/{video_id}")
         return True
 
     except Exception as e:
@@ -581,7 +540,7 @@ def upload_video_google_api(video_path, title, description, tags=None):
 # ---------------- MAIN PIPELINE ----------------
 def run_pipeline():
     print("🧩 Fetching puzzle from Lichess...")
-    puzzle_json = fetch_puzzle_from_lichess()
+    puzzle_json, puzzle_url = fetch_puzzle_from_lichess()
     board, solution_moves = get_board_from_puzzle_json(puzzle_json)
     puzzle_data = puzzle_json.get("puzzle", {})
     puzzle_id = puzzle_data.get("id", "unknown")
@@ -592,16 +551,17 @@ def run_pipeline():
     side_name = "White to move" if board.turn == chess.WHITE else "Black to move"
     side_text = "WHITE TO MOVE" if board.turn == chess.WHITE else "BLACK TO MOVE"
     
-    # 1. Render initial board frame
+    # Render initial board frame
     puzzle_board_pil = generate_board_pil(board)
 
-    # 2. Render each valid solution move as its own scene.
+    # Render solution moves
     solution_frames = []
     solution_captions = []
     solution_speech = []
     first_solution_san = "N/A"
     solution_board = board.copy()
     solution_move_number = 0
+    
     for move_uci in solution_moves or []:
         try:
             move = chess.Move.from_uci(move_uci)
@@ -612,7 +572,7 @@ def run_pipeline():
             move_number = solution_board.fullmove_number
             move_side = "WHITE" if solution_board.turn == chess.WHITE else "BLACK"
             arrow = chess.svg.Arrow(move.from_square, move.to_square, color="#00E676")
-            commentary = move_commentary(solution_board, move, san, (solution_move_number * 2) + 1)
+            
             solution_board.push(move)
             if is_player_move:
                 solution_move_number += 1
@@ -626,7 +586,9 @@ def run_pipeline():
             else:
                 solution_hook = "OPPONENT BEST MOVE"
                 solution_side = f"{move_side} REPLIES"
-                spoken_line = f"The opponent's best move is {san}."
+                spoken_line = f"The opponent plays {san}."
+
+            commentary = f"Move {move_number}: {san}"
             solution_frames.append(
                 create_reel_frame_array(
                     generate_board_pil(solution_board, arrows=[arrow], perspective=board.turn),
@@ -636,6 +598,7 @@ def run_pipeline():
                     is_solution=True,
                     info_text=info_text,
                     caption=commentary,
+                    puzzle_link=puzzle_url,
                 )
             )
             solution_captions.append(commentary)
@@ -653,6 +616,7 @@ def run_pipeline():
                 is_solution=True,
                 info_text=info_text,
                 caption="No solution was returned for this puzzle.",
+                puzzle_link=puzzle_url,
             )
         ]
         solution_captions = ["No solution was returned for this puzzle."]
@@ -662,7 +626,7 @@ def run_pipeline():
     if preview_mode:
         Image.fromarray(solution_frames[-1]).save(OUTPUT_DIR / "preview_frame.jpg", quality=92)
 
-    # 3. Audio & Voice Generation
+    # Audio Synthesis
     p_script, _ = convert_san_to_speech(side_name, first_solution_san)
     s_script = " ".join(solution_speech)
     
@@ -677,12 +641,12 @@ def run_pipeline():
     generate_voiceover_file(p_script, temp_p_audio)
     generate_voiceover_file(s_script, temp_s_audio)
 
-    # 4. Assemble video and audio clips, closing all source handles afterwards.
     raw_v1 = mp.AudioFileClip(temp_p_audio)
     raw_v2 = mp.AudioFileClip(temp_s_audio)
     raw_sfx = mp.AudioFileClip(chess_sfx)
     raw_background = mp.AudioFileClip(background_audio)
     v1 = v2 = sfx = background = clip1 = clip2 = final_video = None
+    
     try:
         v1 = raw_v1.with_start(0.2)
         puzzle_duration = max(MIN_PUZZLE_SECONDS, v1.duration + 0.4)
@@ -709,6 +673,7 @@ def run_pipeline():
                 countdown=countdown,
                 info_text=info_text,
                 caption=p_script,
+                puzzle_link=puzzle_url,
             )
             puzzle_clips.append(mp.ImageClip(puzzle_frame).with_duration(segment_duration))
             remaining_duration -= segment_duration
@@ -724,13 +689,8 @@ def run_pipeline():
         clip2 = mp.concatenate_videoclips(solution_clips, method="compose")
         final_video = mp.concatenate_videoclips([clip1, clip2], method="compose")
         final_video = final_video.with_audio(mp.CompositeAudioClip([background, v1, v2, sfx]))
-        subtitle_entries = [(0.2, min(puzzle_duration, 0.2 + raw_v1.duration), p_script)]
-        for index, caption in enumerate(solution_captions):
-            start = puzzle_duration + (index * solution_frame_duration)
-            subtitle_entries.append((start, start + solution_frame_duration, caption))
-        write_srt(OUTPUT_DIR / "temp_output_short.srt", subtitle_entries)
 
-        print(f"🎬 Rendering Short MP4 video for move: '{first_solution_san}'...")
+        print(f"🎬 Rendering Short MP4 video...")
         final_video.write_videofile(
             temp_video,
             fps=FPS,
@@ -754,25 +714,14 @@ def run_pipeline():
             if os.path.exists(temporary_file):
                 os.remove(temporary_file)
 
-    # 5. Upload step via Official YouTube Data API v3
     if preview_mode or "--no-upload" in sys.argv:
-        print(f"✅ Video created at '{temp_video}'. Upload skipped via --no-upload flag.")
-        if preview_mode:
-            print(f"🖼️ Still preview created at '{OUTPUT_DIR / 'preview_frame.jpg'}'.")
-            print(f"🎵 Background sound preview created at '{background_file}'.")
+        print(f"✅ Video generated locally at: '{temp_video}' (Upload skipped).")
         return
 
     yt_title = f"Can You Solve This Chess Puzzle? {puzzle_id} | {datetime.now(timezone.utc):%Y-%m-%d} #Shorts"
-    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle rating: {puzzle_rating}\n\n#chess #shorts #chesstactics #puzzles"
+    yt_description = f"Can you find the best move for {side_text}?\n\nPuzzle Rating: {puzzle_rating}\nPlay on Lichess: {puzzle_url}\n\n#chess #shorts #chesstactics #puzzles"
     
-    try:
-        upload_success = upload_video_google_api(temp_video, yt_title, yt_description)
-    finally:
-        if os.path.exists(temp_video):
-            os.remove(temp_video)
-
-    if upload_success:
-        print("✨ Process completed successfully!")
+    upload_video_google_api(temp_video, yt_title, yt_description)
 
 if __name__ == "__main__":
     run_pipeline()
