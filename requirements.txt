@@ -10,3 +10,6 @@ google-auth-oauthlib
 google-auth-httplib2
 cairosvg
 cairocffi
+yt-dlp
+curl_cffi
+youtube-transcript-api

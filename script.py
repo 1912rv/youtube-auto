@@ -509,6 +509,21 @@ def create_reel_frame_array(
     return np.array(canvas)
 
 # ---------------- GOOGLE YOUTUBE DATA API V3 AUTH & UPLOAD ----------------
+def refresh_youtube_credentials(creds):
+    if not creds or not getattr(creds, "expired", False) or not getattr(creds, "refresh_token", None):
+        return creds
+
+    try:
+        creds.refresh(Request())
+        return creds
+    except Exception as exc:
+        raise RuntimeError(
+            "YouTube OAuth token has expired or been revoked. Regenerate YOUTUBE_TOKEN_JSON "
+            "from a Google account with YouTube upload permission, or set "
+            "YOUTUBE_CLIENT_SECRET_JSON and run a fresh local OAuth login."
+        ) from exc
+
+
 def get_youtube_authenticated_service():
     creds = None
     token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
@@ -521,7 +536,17 @@ def get_youtube_authenticated_service():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds = refresh_youtube_credentials(creds)
+            except RuntimeError:
+                creds = None
+                if os.path.exists(TOKEN_PICKLE_FILE):
+                    os.remove(TOKEN_PICKLE_FILE)
+                client_secret_json = os.environ.get("YOUTUBE_CLIENT_SECRET_JSON")
+                if not client_secret_json:
+                    raise
+                flow = InstalledAppFlow.from_client_config(json.loads(client_secret_json), SCOPES)
+                creds = flow.run_local_server(port=0)
         else:
             client_secret_json = os.environ.get("YOUTUBE_CLIENT_SECRET_JSON")
             if not client_secret_json:
