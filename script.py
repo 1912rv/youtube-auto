@@ -1102,6 +1102,5 @@ def run_pipeline():
 
   upload_video_google_api(temp_video, yt_title, yt_description)
 
-
 if __name__ == "__main__":
   run_pipeline()
