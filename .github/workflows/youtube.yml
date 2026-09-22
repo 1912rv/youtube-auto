@@ -27,11 +27,16 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Create output directory
+        run: mkdir -p /tmp/youtube-auto
 
       - name: Restore puzzle history
         uses: actions/cache@v4
@@ -45,7 +50,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
-        run: run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
       - name: Generate and upload short
         env:
@@ -61,6 +66,6 @@ jobs:
           GH_TOKEN: ${{ secrets.REPOSITORY_SERVICE_TOKEN }}
         run: |
           if [ -f updated_token.json ]; then
-            gh secret set YOUTUBE_TOKEN_JSON < updated_token.json
+            gh secret set YOUTUBE_TOKEN_JSON --repo "${{ github.repository }}" < updated_token.json
             echo "✅ GitHub Secret YOUTUBE_TOKEN_JSON automatically updated."
           fi
