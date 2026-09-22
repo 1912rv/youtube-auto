@@ -19,3 +19,23 @@ token.pickle
 # OS/editor noise
 .DS_Store
 Thumbs.db
+youtube-token.json
+updated_token.json
+client_secret.json
+
+# Dependencies
+node_modules/
+
+# Environment & Virtual Environments
+.venv/
+venv/
+.env
+
+# YouTube OAuth & API Credentials (DO NOT COMMIT)
+token.json
+client_secret.json
+client_secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db

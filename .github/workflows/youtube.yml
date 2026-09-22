@@ -11,13 +11,13 @@ on:
       - ".github/workflows/youtube.yml"
   workflow_dispatch:
   schedule:
-    # 00:00, 06:00, 09:00, 12:00, 18:00, 21:00 IST (UTC+5:30)
-    - cron: "30 18 * * *"
-    - cron: "30 0 * * *"
-    - cron: "30 3 * * *"
-    - cron: "30 6 * * *"
-    - cron: "30 12 * * *"
-    - cron: "30 15 * * *"
+    # 06:00, 12:00, 15:00, 18:00, 21:00, 23:00 IST (UTC+5:30)
+    - cron: "30 0 * * *"   # 06:00 IST
+    - cron: "30 6 * * *"   # 12:00 IST
+    - cron: "30 9 * * *"   # 15:00 IST
+    - cron: "30 12 * * *"  # 18:00 IST
+    - cron: "30 15 * * *"  # 21:00 IST
+    - cron: "30 17 * * *"  # 23:00 IST
 
 concurrency:
   group: youtube-short-pipeline
@@ -27,9 +27,9 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -45,7 +45,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: run: python -m pip install -r requirements.txt
 
       - name: Generate and upload short
         env:
@@ -54,3 +54,13 @@ jobs:
           PUZZLE_FETCH_ATTEMPTS: "8"
           MIN_PUZZLE_RATING: "2000"
         run: python script.py
+
+      - name: Automatically Update GitHub Secret
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.REPOSITORY_SERVICE_TOKEN }}
+        run: |
+          if [ -f updated_token.json ]; then
+            gh secret set YOUTUBE_TOKEN_JSON < updated_token.json
+            echo "✅ GitHub Secret YOUTUBE_TOKEN_JSON automatically updated."
+          fi
