@@ -60,7 +60,7 @@ FPS = 30
 MIN_PUZZLE_SECONDS = 10.0
 COUNTDOWN_SECONDS = 10
 MIN_SOLUTION_SECONDS = 4.0
-MIN_PUZZLE_RATING = int(os.environ.get("MIN_PUZZLE_RATING", "2000"))
+MIN_PUZZLE_RATING = int(os.environ.get("MIN_PUZZLE_RATING", "2500"))
 PUZZLE_FETCH_ATTEMPTS = int(os.environ.get("PUZZLE_FETCH_ATTEMPTS", "8"))
 VOICE_NAME = os.environ.get("VOICE_NAME", "en-US-ChristopherNeural")
 BACKGROUND_VOLUME = float(os.environ.get("BACKGROUND_VOLUME", "0.35"))
@@ -84,7 +84,7 @@ HOOKS = [
 TITLE_TEMPLATES = [
     "{hook} ({rating} ELO) #Shorts",
     "Can You Find the Winning Move for {side}? | {rating} Rating #Shorts",
-    "Chess Puzzle #{puzzle_id}: {hook} #Shorts",
+    "Chess Puzzle # {puzzle_id}: {hook} #Shorts",
     "Only {difficulty}% Can Solve This! ({side}) #Shorts",
     "Master-Level Chess Puzzle | Can You Solve It? #Shorts",
 ]
@@ -169,8 +169,8 @@ def convert_san_to_speech(side_text, san_move, announce_time_up=True):
   puzzle_script = (
       f"{side_text}. Take a moment and see if you can find the best move."
   )
-  reveal_prefix = "Time's up. " if announce_time_up else "The line continues. "
-  finish_line = " That's checkmate! The game is over." if "#" in san_move else ""
+  reveal_prefix = "Time's up. " if announce_time_up else "The main line goes. "
+  finish_line = " That's checkmate!. " if "#" in san_move else ""
   solution_script = f"{reveal_prefix}The move is {spoken_move}.{finish_line}"
   return puzzle_script, solution_script
 
@@ -433,9 +433,9 @@ def draw_centered_text(
     y,
     font,
     width,
-    fill="white",
+    fill="black",
     stroke_width=3,
-    stroke_fill="black",
+    stroke_fill="white",
 ):
   bbox = draw.textbbox((0, 0), text, font=font)
   text_w = bbox[2] - bbox[0]
@@ -805,8 +805,8 @@ def upload_video_google_api(video_path, title, description, tags=None):
             "title": title,
             "description": description,
             "tags": tags
-            or ["chess", "shorts", "chesstactics", "puzzles", "lichess"],
-            "categoryId": "24",
+            or ["chess endgame","magnus carlsen endgame","chess puzzle","chess puzzles","hard chess puzzle","grandmaster puzzle","chess tactics","endgame puzzle","chess calculation","find the best move","brilliant chess move","carlsen chess","chess strategy","endgame technique","rook endgame","grandmaster chess","chess improvement","chess shorts","lichess puzzle","chess challenge","gm chess puzzle","difficult chess puzzle","chess masterclass","chess brilliance","chess tactics puzzle","chess puzzle solution"],
+            "categoryId": "22",
         },
         "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
     }
@@ -1098,6 +1098,9 @@ def run_pipeline():
       f"Can you find the best move for {side_text}?\n\nPuzzle Rating:"
       f" {puzzle_rating}\nPuzzle link: {puzzle_url}\n\n#chess #shorts"
       " #chesstactics #puzzles"
+      " "
+      " "
+      "#chessendgame #magnuscarlsenendgame #chesspuzzle #chesspuzzles #hardchesspuzzle #grandmasterpuzzle #chesstactics #endgamepuzzle #chesscalculation #findthebestmove #brilliantchessmove #carlsenchess #chessstrategy #endgametechnique #rookendgame #grandmasterchess #chessimprovement #chessshorts #lichesspuzzle #chesschallenge #gmchesspuzzle #difficultchesspuzzle #chessmasterclass #chessbrilliance #chesstacticspuzzle #chesspuzzlesolution"
   )
 
   upload_video_google_api(temp_video, yt_title, yt_description)
