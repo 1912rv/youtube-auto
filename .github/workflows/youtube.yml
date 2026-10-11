@@ -11,13 +11,10 @@ on:
       - ".github/workflows/youtube.yml"
   workflow_dispatch:
   schedule:
-    # 06:00, 12:00, 15:00, 18:00, 21:00, 23:00 IST (UTC+5:30)
     - cron: "30 0 * * *"   # 06:00 IST
     - cron: "30 6 * * *"   # 12:00 IST
-    - cron: "30 9 * * *"   # 15:00 IST
     - cron: "30 12 * * *"  # 18:00 IST
     - cron: "30 15 * * *"  # 21:00 IST
-    - cron: "30 17 * * *"  # 23:00 IST
 
 concurrency:
   group: youtube-short-pipeline
